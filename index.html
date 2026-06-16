@@ -1,0 +1,1525 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>学習負荷プランナー v0.4.1</title>
+  <style>
+    :root {
+      --bg: #f7f3ee;
+      --card: rgba(255,255,255,.92);
+      --ink: #2c2925;
+      --muted: #7b7168;
+      --line: #e7ded4;
+      --accent: #7b5b43;
+      --accent2: #caa381;
+      --good: #2f7d55;
+      --warn: #b8752b;
+      --bad: #b34b4b;
+      --blue: #4e6f8c;
+      --shadow: 0 14px 40px rgba(35, 26, 17, 0.08);
+      --r: 18px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", "YuGothic", Meiryo, sans-serif;
+      color: var(--ink);
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 12% 0%, rgba(202, 163, 129, .27), transparent 30rem),
+        radial-gradient(circle at 85% 8%, rgba(123, 91, 67, .12), transparent 22rem),
+        linear-gradient(180deg, #fffdfa, var(--bg));
+    }
+    header, main { max-width: 1220px; margin: 0 auto; padding: 18px; }
+    header { padding-top: 26px; padding-bottom: 4px; }
+    .head {
+      display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap;
+    }
+    h1 { margin:0; font-size:clamp(24px,4vw,38px); letter-spacing:.03em; }
+    .sub { color:var(--muted); margin:8px 0 0; line-height:1.6; font-size:14px; }
+    .tabs {
+      display:flex; gap:8px; flex-wrap:wrap; position:sticky; top:0; z-index:20;
+      padding:10px 0; background:rgba(247,243,238,.88); backdrop-filter:blur(12px);
+      margin: 6px 0 14px;
+    }
+    .tab, button, .filebtn {
+      border:0; border-radius:999px; padding:10px 13px; cursor:pointer;
+      font-weight:800; font-size:14px; font:inherit; text-decoration:none;
+      display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    }
+    .tab { background:rgba(255,255,255,.74); color:var(--ink); border:1px solid var(--line); }
+    .tab.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+    button, .filebtn { background:var(--accent); color:#fff; border-radius:12px; }
+    button.secondary, .filebtn.secondary { background:#eee5dc; color:var(--ink); }
+    button.ghost { background:transparent; color:var(--accent); border:1px solid var(--line); }
+    button.danger { background:var(--bad); }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    .grid { display:grid; grid-template-columns:repeat(12,1fr); gap:14px; }
+    .span-12 { grid-column:span 12; }
+    .span-8 { grid-column:span 8; }
+    .span-7 { grid-column:span 7; }
+    .span-6 { grid-column:span 6; }
+    .span-5 { grid-column:span 5; }
+    .span-4 { grid-column:span 4; }
+    .span-3 { grid-column:span 3; }
+    @media (max-width: 900px) {
+      header, main { padding-left:12px; padding-right:12px; }
+      .span-8,.span-7,.span-6,.span-5,.span-4,.span-3 { grid-column:span 12; }
+    }
+    .card {
+      background:var(--card); border:1px solid rgba(231,222,212,.95);
+      border-radius:var(--r); box-shadow:var(--shadow); padding:16px;
+    }
+    h2 { margin:0 0 12px; font-size:18px; }
+    h3 { margin:0 0 10px; font-size:15px; }
+    .metric { font-size:26px; font-weight:900; margin:4px 0 2px; }
+    .small { color:var(--muted); font-size:12px; line-height:1.6; }
+    .muted { color:var(--muted); }
+    .hidden { display:none !important; }
+    form { display:grid; gap:12px; }
+    label { display:grid; gap:6px; font-size:13px; font-weight:800; color:#4d4238; }
+    input, select, textarea {
+      width:100%; border:1px solid var(--line); background:#fff; color:var(--ink);
+      border-radius:12px; padding:11px 12px; font:inherit; outline:none;
+    }
+    input:focus, select:focus, textarea:focus { border-color:var(--accent2); box-shadow:0 0 0 4px rgba(202,163,129,.19); }
+    textarea { resize:vertical; min-height:80px; }
+    input[type=file] { display:none; }
+    .row2 { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+    .row3 { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+    .row4 { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+    @media (max-width: 680px) { .row2,.row3,.row4 { grid-template-columns:1fr; } }
+    .actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    .list { display:grid; gap:10px; }
+    .item {
+      border:1px solid var(--line); border-radius:16px; padding:12px;
+      background:rgba(255,255,255,.78);
+    }
+    .item-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:8px; }
+    .title { font-weight:900; line-height:1.35; }
+    .badges { display:flex; flex-wrap:wrap; gap:6px; margin:7px 0; }
+    .badge {
+      border-radius:999px; background:#f1e8df; color:#5b4a3c; padding:4px 8px;
+      font-size:12px; font-weight:850; white-space:nowrap;
+    }
+    .badge.good { color:var(--good); background:rgba(47,125,85,.12); }
+    .badge.warn { color:var(--warn); background:rgba(184,117,43,.13); }
+    .badge.bad { color:var(--bad); background:rgba(179,75,75,.12); }
+    .badge.blue { color:var(--blue); background:rgba(78,111,140,.12); }
+    .progress { height:11px; background:#eee6de; border-radius:999px; overflow:hidden; margin:10px 0 6px; }
+    .bar { height:100%; width:0%; background:linear-gradient(90deg,var(--accent2),var(--accent)); border-radius:999px; transition:.25s; }
+    .twocol { display:grid; grid-template-columns:1fr 1fr; gap:7px; color:var(--muted); font-size:13px; line-height:1.55; }
+    @media (max-width: 560px) { .twocol { grid-template-columns:1fr; } }
+    .empty {
+      border:1px dashed var(--line); background:#fffaf4; color:var(--muted);
+      border-radius:15px; padding:14px; line-height:1.65; font-size:13px;
+    }
+    .notice {
+      border:1px solid #efd3b7; background:#fff7ec; color:#5b4632;
+      border-radius:15px; padding:12px; line-height:1.65; font-size:13px;
+    }
+    .notice.bad { border-color:rgba(179,75,75,.28); background:rgba(179,75,75,.06); color:#743434; }
+    .notice.good { border-color:rgba(47,125,85,.25); background:rgba(47,125,85,.06); color:#245f42; }
+    .divider { height:1px; background:var(--line); margin:12px 0; }
+    .toast {
+      position:fixed; left:50%; bottom:18px; transform:translateX(-50%);
+      background:rgba(44,41,37,.94); color:#fff; padding:11px 14px;
+      border-radius:999px; font-weight:900; z-index:200; opacity:0; pointer-events:none; transition:.2s;
+      font-size:13px;
+    }
+    .toast.show { opacity:1; transform:translateX(-50%) translateY(-4px); }
+    .checkline { display:flex; gap:8px; align-items:center; font-weight:800; color:var(--ink); }
+    .checkline input { width:auto; }
+    .tasknum {
+      width:30px; height:30px; border-radius:50%; background:#eee5dc; display:inline-flex;
+      align-items:center; justify-content:center; font-weight:900; flex:0 0 auto;
+    }
+    .taskrow { display:flex; gap:10px; align-items:flex-start; }
+    .rangehint { font-size:12px; color:var(--muted); margin-top:-3px; }
+    .dangerbox { border-color:rgba(179,75,75,.24); background:rgba(179,75,75,.04); }
+
+    .range-rows { display:grid; gap:8px; }
+    .range-row { display:grid; grid-template-columns:1fr 1fr auto; gap:8px; align-items:end; }
+    .range-row button { padding:10px 12px; }
+    @media (max-width: 620px) { .range-row { grid-template-columns:1fr 1fr; } .range-row button { grid-column:1 / -1; } }
+    .statgrid { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:10px; }
+    @media (max-width: 760px) { .statgrid { grid-template-columns:repeat(2, minmax(0,1fr)); } }
+    .statbox { border:1px solid var(--line); background:rgba(255,255,255,.78); border-radius:15px; padding:12px; }
+    .statbox .num { font-size:23px; font-weight:900; margin-top:4px; }
+    .barlist { display:grid; gap:9px; }
+    .barrow { display:grid; grid-template-columns:72px 1fr 74px; gap:8px; align-items:center; font-size:12px; color:var(--muted); }
+    .bartrack { height:12px; background:#eee6de; border-radius:999px; overflow:hidden; }
+    .barfill { height:100%; background:linear-gradient(90deg,var(--accent2),var(--accent)); border-radius:999px; width:0%; }
+    .detail-panel { border:1px solid var(--line); background:rgba(255,255,255,.78); border-radius:16px; padding:12px; }
+    .mini-select-row { display:flex; gap:8px; flex-wrap:wrap; align-items:end; justify-content:space-between; margin-bottom:10px; }
+    .mini-select-row label { min-width:180px; }
+    .day-detail { display:grid; gap:10px; }
+    .day-card { border:1px solid var(--line); border-radius:15px; padding:12px; background:rgba(255,255,255,.74); }
+    .day-card-head { display:flex; justify-content:space-between; gap:10px; align-items:center; margin-bottom:8px; }
+    .material-mini-list { display:grid; gap:7px; }
+    .material-mini-row { display:grid; grid-template-columns:minmax(90px, 1fr) 2fr 70px; gap:8px; align-items:center; font-size:12px; color:var(--muted); }
+    @media (max-width: 620px) { .material-mini-row { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="head">
+      <div>
+        <h1>学習負荷プランナー v0.4.1</h1>
+        <p class="sub">数字だけの範囲指定・今日やること・教材別分析・日付変更時刻・教材別詳細に対応。</p>
+      </div>
+      <div class="actions">
+        <button class="secondary" id="exportTop">バックアップ</button>
+        <label class="filebtn secondary" for="importTop">読み込み</label>
+        <input type="file" id="importTop" accept=".json,application/json">
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <nav class="tabs">
+      <button class="tab active" data-tab="today">今日</button>
+      <button class="tab" data-tab="analysis">分析</button>
+      <button class="tab" data-tab="materials">教材</button>
+      <button class="tab" data-tab="record">記録</button>
+      <button class="tab" data-tab="tasks">タスク</button>
+      <button class="tab" data-tab="settings">設定</button>
+    </nav>
+
+    <section id="today" class="screen">
+      <div class="grid">
+        <div class="card span-3">
+          <h2>今日の予定</h2>
+          <div class="metric" id="metricToday">0分</div>
+          <div class="small" id="metricTodaySub">未完了タスクの合計</div>
+        </div>
+        <div class="card span-3">
+          <h2>今日の設定</h2>
+          <div class="metric" id="metricMode">通常</div>
+          <div class="small" id="metricCapacity">設定時間 0分</div>
+        </div>
+        <div class="card span-3">
+          <h2>持ち越し</h2>
+          <div class="metric" id="metricCarry">0件</div>
+          <div class="small">昨日以前の未完了</div>
+        </div>
+        <div class="card span-3">
+          <h2>警告</h2>
+          <div class="metric" id="metricWarnings">0件</div>
+          <div class="small">期限から逆算した不足</div>
+        </div>
+
+        <div class="card span-8">
+          <div class="item-head">
+            <h2>今日やること</h2>
+            <div class="actions">
+              <button class="secondary" id="regenPlan">今日の計画を作り直す</button>
+            </div>
+          </div>
+          <div id="todayNotice"></div>
+          <div class="divider"></div>
+          <div id="todayTasks" class="list"></div>
+        </div>
+
+        <div class="card span-4">
+          <h2>今日はどれくらいやる？</h2>
+          <form id="modeForm">
+            <label>
+              今日のモード
+              <select id="todayMode">
+                <option value="normal">通常</option>
+                <option value="light">軽め</option>
+                <option value="minimum">最低限</option>
+                <option value="rest">今日は休み</option>
+              </select>
+            </label>
+            <button type="submit">モードを保存</button>
+          </form>
+          <div class="divider"></div>
+          <div class="notice">
+            <strong>モードの意味</strong><br>
+            通常：設定時間どおり<br>
+            軽め：新規学習を約60%に圧縮<br>
+            最低限：復習優先、新規は少しだけ<br>
+            休み：新規を作らず、期限切れ復習だけ表示
+          </div>
+        </div>
+
+        <div class="card span-12">
+          <h2>期限から逆算した警告</h2>
+          <div id="warningsList" class="list"></div>
+        </div>
+      </div>
+    </section>
+
+    
+    <section id="analysis" class="screen hidden">
+      <div class="grid">
+        <div class="card span-12">
+          <h2>勉強時間の振り返り</h2>
+          <div class="statgrid" id="analysisStats"></div>
+        </div>
+        <div class="card span-7">
+          <div class="mini-select-row">
+            <h2>最近14日の日別勉強時間（教材別に切り替え可）</h2>
+            <label>表示モード
+              <select id="dailyAnalysisMode">
+                <option value="material">日ごとに教材別</option>
+                <option value="total">日ごとの合計</option>
+              </select>
+            </label>
+          </div>
+          <div id="dailyChart" class="barlist"></div>
+        </div>
+        <div class="card span-5">
+          <h2>教材別 勉強時間ランキング</h2>
+          <div id="materialRanking" class="barlist"></div>
+        </div>
+        <div class="card span-6">
+          <h2>新規学習と復習の比率</h2>
+          <div id="typeBreakdown" class="barlist"></div>
+        </div>
+        <div class="card span-6">
+          <h2>苦手フラグのある記録</h2>
+          <div id="weakRecords" class="list"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="materials" class="screen hidden">
+      <div class="grid">
+        <div class="card span-5">
+          <h2 id="materialTitle">教材を登録</h2>
+          <form id="materialForm">
+            <input type="hidden" id="materialId">
+            <label>教材名 <input id="matName" required placeholder="例：心理学検定 一問一答"></label>
+            <label>カテゴリ <input id="matCategory" placeholder="例：心理学検定 / TOEIC / 授業"></label>
+            <div class="row3">
+              <label>単位名 <input id="matUnit" placeholder="p" value="p"></label>
+              <label>期限 <input id="matDeadline" type="date" required></label>
+              <label>優先度
+                <select id="matPriority">
+                  <option value="high">高</option>
+                  <option value="normal" selected>中</option>
+                  <option value="low">低</option>
+                </select>
+              </label>
+            </div>
+            <div>
+              <label>学習する範囲</label>
+              <div id="rangeRows" class="range-rows"></div>
+              <div class="actions" style="margin-top:8px;">
+                <button type="button" class="secondary" id="addRangeBtn">範囲を追加</button>
+              </div>
+              <div class="rangehint">開始番号と終了番号だけ入れる。例：開始 1 / 終了 80。複数範囲も追加可能。</div>
+            </div>
+            <div class="row2">
+              <label>予想難易度
+                <select id="matDefaultDiff">
+                  <option value="1">1 かなり軽い</option>
+                  <option value="2">2 軽い</option>
+                  <option value="3" selected>3 普通</option>
+                  <option value="4">4 重い</option>
+                  <option value="5">5 かなり重い</option>
+                </select>
+              </label>
+              <label>1単位の初期予想（分） <input id="matBaseMin" type="number" min="1" step="1" value="6"></label>
+            </div>
+            <label>メモ <textarea id="matMemo" placeholder="例：A領域だけ、余裕があれば第5章も"></textarea></label>
+            <div class="actions">
+              <button type="submit">保存</button>
+              <button type="button" class="secondary" id="cancelMat">リセット</button>
+            </div>
+          </form>
+        </div>
+        <div class="card span-7">
+          <h2>教材リスト</h2>
+          <div id="materialList" class="list"></div>
+        </div>
+        <div class="card span-12 hidden" id="materialDetailCard">
+          <div class="item-head">
+            <h2 id="materialDetailTitle">教材詳細</h2>
+            <button class="ghost" id="closeMaterialDetail">閉じる</button>
+          </div>
+          <div id="materialDetail" class="detail-panel"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="record" class="screen hidden">
+      <div class="grid">
+        <div class="card span-5">
+          <h2 id="recordTitle">学習を記録</h2>
+          <form id="recordForm">
+            <input type="hidden" id="recordTaskId">
+            <label>教材 <select id="recMaterial" required></select></label>
+            <div class="row3">
+              <label>種類
+                <select id="recType">
+                  <option value="new">新規学習</option>
+                  <option value="review">復習</option>
+                </select>
+              </label>
+              <label>日付 <input id="recDate" type="date" required></label>
+              <label>時間（分） <input id="recMinutes" type="number" min="1" step="1" required></label>
+            </div>
+            <div class="row2">
+              <label>範囲 開始 <input id="recStart" type="number" min="0" step="1" required></label>
+              <label>範囲 終了 <input id="recEnd" type="number" min="0" step="1" required></label>
+            </div>
+            <div class="row3">
+              <label>難易度
+                <select id="recDiff">
+                  <option value="1">1 軽い</option>
+                  <option value="2">2 やや軽い</option>
+                  <option value="3" selected>3 普通</option>
+                  <option value="4">4 重い</option>
+                  <option value="5">5 かなり重い</option>
+                </select>
+              </label>
+              <label>集中度
+                <select id="recFocus">
+                  <option value="1">1 低い</option>
+                  <option value="2">2 やや低い</option>
+                  <option value="3" selected>3 普通</option>
+                  <option value="4">4 高い</option>
+                  <option value="5">5 かなり高い</option>
+                </select>
+              </label>
+              <label>苦手フラグ
+                <select id="recWeak">
+                  <option value="ok">大丈夫</option>
+                  <option value="uncertain">やや不安</option>
+                  <option value="weak">苦手</option>
+                  <option value="redo">解き直し必要</option>
+                </select>
+              </label>
+            </div>
+            <label>メモ <textarea id="recMemo" placeholder="例：用語が曖昧、問題演習でミス多め"></textarea></label>
+            <label class="checkline"><input id="recAutoReview" type="checkbox" checked>新規学習なら固定ペースで復習タスクを作る</label>
+            <button type="submit">記録する</button>
+          </form>
+          <div class="divider"></div>
+          <div class="notice">新規学習は範囲の重複チェックをします。復習は進捗には入りません。</div>
+        </div>
+        <div class="card span-7">
+          <h2>最近の記録</h2>
+          <div id="recordList" class="list"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tasks" class="screen hidden">
+      <div class="grid">
+        <div class="card span-6">
+          <h2>未完了タスク</h2>
+          <div id="pendingTasks" class="list"></div>
+        </div>
+        <div class="card span-6">
+          <h2>完了済みタスク</h2>
+          <div id="doneTasks" class="list"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="settings" class="screen hidden">
+      <div class="grid">
+        <div class="card span-6">
+          <h2>曜日ごとの勉強できる時間</h2>
+          <form id="capacityForm">
+            <div class="row2">
+              <label>月曜（分） <input id="cap1" type="number" min="0" step="5"></label>
+              <label>火曜（分） <input id="cap2" type="number" min="0" step="5"></label>
+              <label>水曜（分） <input id="cap3" type="number" min="0" step="5"></label>
+              <label>木曜（分） <input id="cap4" type="number" min="0" step="5"></label>
+              <label>金曜（分） <input id="cap5" type="number" min="0" step="5"></label>
+              <label>土曜（分） <input id="cap6" type="number" min="0" step="5"></label>
+              <label>日曜（分） <input id="cap0" type="number" min="0" step="5"></label>
+            </div>
+            <button type="submit">保存</button>
+          </form>
+          <div class="divider"></div>
+          <h3>固定復習ペース</h3>
+          <p class="small">新規学習した範囲は、難易度に関係なく「翌日・3日後・7日後・14日後」に復習タスクが作られます。</p>
+          <div class="divider"></div>
+          <h3>日付変更時刻</h3>
+          <form id="boundaryForm">
+            <label>何時になったら翌日扱いにする？
+              <select id="dayBoundaryHour">
+                <option value="0">0:00</option>
+                <option value="1">1:00</option>
+                <option value="2">2:00</option>
+                <option value="3">3:00</option>
+                <option value="4">4:00</option>
+                <option value="5">5:00</option>
+                <option value="6">6:00</option>
+                <option value="7">7:00</option>
+                <option value="8">8:00</option>
+              </select>
+            </label>
+            <button type="submit">日付変更時刻を保存</button>
+          </form>
+          <p class="small" id="boundaryHelp" style="margin-top:8px;"></p>
+        </div>
+
+        <div class="card span-6">
+          <h2>データ管理</h2>
+          <div class="notice bad">
+            iPhoneで「データが消えない」を本気でやるなら、最終的にはクラウド保存が必要です。このHTML版はバックアップ書き出しで守る方式です。
+          </div>
+          <div class="divider"></div>
+          <div class="actions">
+            <button id="exportBtn">バックアップ書き出し</button>
+            <label class="filebtn secondary" for="importFile">バックアップ読み込み</label>
+            <input type="file" id="importFile" accept=".json,application/json">
+          </div>
+          <p class="small">ブラウザ内保存は便利ですが、Safariのデータ削除・端末故障・ストレージ整理では消える可能性があります。週1回はバックアップ推奨。</p>
+          <div class="divider"></div>
+          <div class="card dangerbox">
+            <h3>全削除</h3>
+            <p class="small">元に戻せません。バックアップ後だけ推奨。</p>
+            <button class="danger" id="resetAll">全データ削除</button>
+          </div>
+        </div>
+
+        <div class="card span-12">
+          <h2>最終的にiPhoneで安定運用するなら</h2>
+          <div class="notice">
+            現実的な順番は、①このHTML版で機能を固める → ②GitHub Pages等でiPhoneのホーム画面から開けるようにする → ③Firebase/Supabaseでクラウド保存を付ける、です。<br>
+            データ消失を本当に避けるなら、ログインは「面倒だけど必要」です。Apple/Googleログインにすれば、パスワード登録よりは楽にできます。
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast"></div>
+
+<script>
+const KEY = "study-load-planner-v04";
+const OLD_KEY = "study-load-planner-v03";
+const OLD_KEY2 = "study-load-planner-v02";
+const REVIEW_OFFSETS = [1,3,7,14];
+const diffMul = {1:.75,2:.88,3:1,4:1.25,5:1.55};
+const focusMul = {1:1.22,2:1.1,3:1,4:.92,5:.85};
+const priorityMul = {high:1.25, normal:1, low:.75};
+const priorityLabel = {high:"高", normal:"中", low:"低"};
+const weakLabel = {ok:"大丈夫", uncertain:"やや不安", weak:"苦手", redo:"解き直し必要"};
+const modeLabel = {normal:"通常", light:"軽め", minimum:"最低限", rest:"休み"};
+const modeMul = {normal:1, light:.6, minimum:.3, rest:0};
+
+let state = load();
+let selectedMaterialId = null;
+
+function defaultState(){
+  return {
+    version:4,
+    materials:[],
+    records:[],
+    tasks:[],
+    settings:{
+      capacities:{0:120,1:45,2:60,3:45,4:30,5:90,6:120},
+      todayModes:{},
+      dayBoundaryHour:4,
+      analysisDailyMode:"material"
+    },
+    createdAt:new Date().toISOString()
+  };
+}
+
+function load(){
+  try{
+    const raw = localStorage.getItem(KEY) || localStorage.getItem(OLD_KEY) || localStorage.getItem(OLD_KEY2);
+    if(!raw) return defaultState();
+    const s = JSON.parse(raw);
+    const d = defaultState();
+    return {
+      ...d,
+      ...s,
+      materials:Array.isArray(s.materials)?s.materials:[],
+      records:Array.isArray(s.records)?s.records:[],
+      tasks:Array.isArray(s.tasks)?s.tasks:[],
+      settings:{...d.settings, ...(s.settings||{}), capacities:{...d.settings.capacities, ...((s.settings||{}).capacities||{})}, todayModes:{...((s.settings||{}).todayModes||{})}, dayBoundaryHour:Number((s.settings||{}).dayBoundaryHour ?? d.settings.dayBoundaryHour), analysisDailyMode:(s.settings||{}).analysisDailyMode || d.settings.analysisDailyMode}
+    };
+  }catch(e){
+    alert("保存データの読み込みに失敗しました。");
+    return defaultState();
+  }
+}
+
+function save(){ localStorage.setItem(KEY, JSON.stringify(state)); }
+function id(p){ return p+"-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8); }
+function today(){
+  const d = new Date();
+  const boundary = Number(state?.settings?.dayBoundaryHour ?? 4);
+  if(d.getHours() < boundary) d.setDate(d.getDate()-1);
+  d.setMinutes(d.getMinutes()-d.getTimezoneOffset());
+  return d.toISOString().slice(0,10);
+}
+
+function actualDateTimeLabel(){
+  const d = new Date();
+  const pad=n=>String(n).padStart(2,"0");
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function dateObj(s){ const [y,m,d]=s.split("-").map(Number); return new Date(y,m-1,d); }
+function addDays(s,n){ const d=dateObj(s); d.setDate(d.getDate()+n); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10); }
+function daysInc(a,b){ if(!a||!b) return 1; const x=dateObj(a), y=dateObj(b); return Math.max(0, Math.ceil((y-x)/86400000)+1); }
+function fmtMin(m){ m=Math.max(0,Math.round(m||0)); if(m<60) return m+"分"; const h=Math.floor(m/60), mm=m%60; return mm?`${h}時間${mm}分`:`${h}時間`; }
+function esc(v){ return String(v??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;"); }
+function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),1700); }
+function mat(idv){ return state.materials.find(m=>m.id===idv); }
+function len(r){ return Math.max(0, r.end-r.start+1); }
+function rangeText(m,a,b){ return `${m?.unitLabel||"p"}.${a}〜${b}`; }
+
+function parseRanges(text){
+  const src = String(text||"").replace(/[，、]/g,",");
+  const found = [];
+  const re = /(\d+)\s*(?:-|〜|~|–|—|から|to)\s*(\d+)|(\d+)/gi;
+  let m;
+  while((m = re.exec(src))){
+    let a,b;
+    if(m[3]){ a=Number(m[3]); b=Number(m[3]); }
+    else { a=Number(m[1]); b=Number(m[2]); }
+    if(Number.isFinite(a)&&Number.isFinite(b)){
+      if(a>b) [a,b]=[b,a];
+      found.push({start:a,end:b});
+    }
+  }
+  return mergeRanges(found);
+}
+
+function mergeRanges(rs){
+  const arr = rs.filter(r=>Number.isFinite(r.start)&&Number.isFinite(r.end)).sort((a,b)=>a.start-b.start||a.end-b.end);
+  const out=[];
+  for(const r of arr){
+    const last=out[out.length-1];
+    if(!last || r.start>last.end+1) out.push({...r});
+    else last.end=Math.max(last.end,r.end);
+  }
+  return out;
+}
+
+function intersect(a,b){ const s=Math.max(a.start,b.start), e=Math.min(a.end,b.end); return s<=e?{start:s,end:e}:null; }
+
+function intersectAny(range, ranges){
+  const out=[];
+  for(const r of ranges){ const x=intersect(range,r); if(x) out.push(x); }
+  return out;
+}
+
+function subtractRanges(base, completed){
+  let remaining = base.map(r=>({...r}));
+  for(const c of completed){
+    const next=[];
+    for(const r of remaining){
+      if(c.end<r.start || c.start>r.end){ next.push(r); continue; }
+      if(c.start>r.start) next.push({start:r.start,end:c.start-1});
+      if(c.end<r.end) next.push({start:c.end+1,end:r.end});
+    }
+    remaining = next;
+  }
+  return mergeRanges(remaining);
+}
+
+function totalLen(rs){ return rs.reduce((s,r)=>s+len(r),0); }
+
+function completedRanges(materialId){
+  const m=mat(materialId); if(!m) return [];
+  const target=m.ranges||[];
+  const recs=state.records.filter(r=>r.materialId===materialId && r.type==="new");
+  const parts=[];
+  for(const r of recs){
+    const rg={start:Number(r.start),end:Number(r.end)};
+    for(const t of target){ const x=intersect(rg,t); if(x) parts.push(x); }
+  }
+  return mergeRanges(parts);
+}
+
+function remainingRanges(materialId){
+  const m=mat(materialId); if(!m) return [];
+  return subtractRanges(m.ranges||[], completedRanges(materialId));
+}
+
+function recordsFor(materialId,type){
+  return state.records.filter(r=>r.materialId===materialId && (!type || r.type===type));
+}
+
+function avg(nums){
+  const a=nums.filter(n=>Number.isFinite(n));
+  return a.length ? a.reduce((x,y)=>x+y,0)/a.length : null;
+}
+
+function estimate(m){
+  const recs = recordsFor(m.id,"new").filter(r=>r.minutes>0 && r.start!=null && r.end!=null);
+  let base = Number(m.baseMinutes||6);
+  if(recs.length){
+    const normalized = recs.map(r=>{
+      const units = Math.max(1, Number(r.end)-Number(r.start)+1);
+      return (r.minutes/units)/(diffMul[r.difficulty]||1)/(focusMul[r.focus]||1);
+    });
+    base = avg(normalized) || base;
+  }
+  const avgDiff = avg(recs.map(r=>Number(r.difficulty))) || Number(m.defaultDifficulty||3);
+  const predicted = base * (diffMul[Math.round(avgDiff)] || 1);
+  const targetTotal = totalLen(m.ranges||[]);
+  const done = totalLen(completedRanges(m.id));
+  const remaining = Math.max(0, targetTotal-done);
+  const remainingMinutes = remaining*predicted;
+  const progress = targetTotal ? done/targetTotal*100 : 0;
+  const days = daysInc(today(), m.deadline);
+  const requiredPerDay = days ? remainingMinutes/days : remainingMinutes;
+  return {base,avgDiff,predicted,targetTotal,done,remaining,remainingMinutes,progress,days,requiredPerDay};
+}
+
+function capacityForDate(dateStr){
+  const d=dateObj(dateStr).getDay();
+  return Number(state.settings.capacities[d]||0);
+}
+
+function modeForToday(){ return state.settings.todayModes[today()] || "normal"; }
+function todayCapacity(){
+  const base = capacityForDate(today());
+  const mode = modeForToday();
+  return Math.round(base * (modeMul[mode] ?? 1));
+}
+
+function capacityUntil(deadline){
+  let sum=0, d=today();
+  let guard=0;
+  while(d<=deadline && guard<800){
+    sum += capacityForDate(d);
+    d = addDays(d,1);
+    guard++;
+  }
+  return sum;
+}
+
+function taskEstimate(t){
+  const m=mat(t.materialId);
+  if(!m) return t.plannedMinutes || 0;
+  const e=estimate(m);
+  const units = Math.max(1, Number(t.end)-Number(t.start)+1);
+  const reviewFactor = t.type==="review" ? .45 : 1;
+  return Math.ceil(units * e.predicted * reviewFactor);
+}
+
+function taskScore(t){
+  const m=mat(t.materialId);
+  const due=t.dueDate;
+  const overdue = due < today() ? 1 : 0;
+  const dueToday = due <= today() ? 1 : 0;
+  const weak = t.weak==="redo" ? 4 : t.weak==="weak" ? 3 : t.weak==="uncertain" ? 2 : 0;
+  const type = t.type==="review" ? 20 : 0;
+  const pr = m ? (m.priority==="high"?6:m.priority==="normal"?3:0) : 0;
+  const days = m ? daysInc(today(), m.deadline) : 999;
+  const urgent = Math.max(0, 12-Math.min(days,12));
+  return type + overdue*60 + dueToday*25 + weak*4 + pr + urgent - (taskEstimate(t)/120);
+}
+
+function sortedTasks(tasks){
+  return tasks.slice().sort((a,b)=>taskScore(b)-taskScore(a));
+}
+
+function makeReviewTasks(record){
+  if(record.type!=="new") return;
+  const m=mat(record.materialId); if(!m) return;
+  for(const offset of REVIEW_OFFSETS){
+    const due=addDays(record.date, offset);
+    if(due > m.deadline) continue;
+    state.tasks.push({
+      id:id("task"),
+      type:"review",
+      materialId:record.materialId,
+      start:record.start,
+      end:record.end,
+      dueDate:due,
+      createdForDate:due,
+      sourceRecordId:record.id,
+      weak:record.weak,
+      plannedMinutes:null,
+      done:false,
+      createdAt:new Date().toISOString()
+    });
+  }
+}
+
+function buildTodayPlan(force=false){
+  const date=today();
+  if(force){
+    state.tasks = state.tasks.filter(t => !(t.createdForDate===date && !t.done && t.generated));
+  } else {
+    if(state.tasks.some(t=>t.createdForDate===date && t.generated)) return;
+  }
+
+  const mode=modeForToday();
+  if(mode==="rest"){
+    save(); return;
+  }
+
+  const dueUndone = state.tasks.filter(t=>!t.done && t.dueDate<=date);
+  const reviewMinutes = dueUndone.filter(t=>t.type==="review").reduce((s,t)=>s+taskEstimate(t),0);
+  let cap = todayCapacity();
+  if(mode==="minimum") cap = Math.max(0, cap - reviewMinutes);
+  else cap = Math.max(0, cap - reviewMinutes);
+
+  const materials = state.materials
+    .map(m=>({m,e:estimate(m)}))
+    .filter(x=>x.e.remaining>0)
+    .sort((a,b)=>{
+      const da = daysInc(date,a.m.deadline), db = daysInc(date,b.m.deadline);
+      const urgent = da-db;
+      if(urgent!==0) return urgent;
+      return (priorityMul[b.m.priority]||1)-(priorityMul[a.m.priority]||1);
+    });
+
+  for(const {m,e} of materials){
+    if(cap<=0) break;
+    const remain = remainingRanges(m.id);
+    if(!remain.length) continue;
+
+    const requiredUnits = Math.max(1, Math.ceil((e.remaining / Math.max(1,e.days)) * (priorityMul[m.priority]||1)));
+    const capUnits = Math.max(1, Math.floor(cap / Math.max(1,e.predicted)));
+    const units = Math.min(requiredUnits, capUnits, len(remain[0]));
+    if(units<=0) continue;
+
+    const start = remain[0].start;
+    const end = start + units - 1;
+    const minutes = Math.ceil(units * e.predicted);
+    state.tasks.push({
+      id:id("task"),
+      type:"new",
+      materialId:m.id,
+      start,
+      end,
+      dueDate:date,
+      createdForDate:date,
+      generated:true,
+      weak:"ok",
+      plannedMinutes:minutes,
+      done:false,
+      createdAt:new Date().toISOString()
+    });
+    cap -= minutes;
+  }
+  save();
+}
+
+function warnings(){
+  const out=[];
+  const ms=state.materials.map(m=>({m,e:estimate(m)})).filter(x=>x.e.remaining>0);
+  for(const {m,e} of ms){
+    const cap=capacityUntil(m.deadline);
+    if(e.remainingMinutes>cap){
+      out.push({
+        type:"material",
+        material:m,
+        shortage:e.remainingMinutes-cap,
+        message:`${m.name}：期限までの設定時間だけでは約${fmtMin(e.remainingMinutes-cap)}不足。1日あたり約${fmtMin(e.requiredPerDay)}必要。`
+      });
+    }
+  }
+  const deadlines=[...new Set(ms.map(x=>x.m.deadline))].sort();
+  for(const d of deadlines){
+    const workload = ms.filter(x=>x.m.deadline<=d).reduce((s,x)=>s+x.e.remainingMinutes,0);
+    const cap=capacityUntil(d);
+    if(workload>cap){
+      out.unshift({
+        type:"global",
+        deadline:d,
+        shortage:workload-cap,
+        message:`${d}までの合計が厳しいです。全体で約${fmtMin(workload-cap)}不足しています。`
+      });
+      break;
+    }
+  }
+  return out;
+}
+
+function render(){
+  buildTodayPlan(false);
+  renderOptions();
+  renderToday();
+  renderAnalysis();
+  renderMaterials();
+  renderRecords();
+  renderTasks();
+  renderSettings();
+}
+
+function renderOptions(){
+  const sel=document.getElementById("recMaterial");
+  sel.innerHTML="";
+  if(!state.materials.length){
+    sel.disabled=true;
+    sel.innerHTML='<option value="">先に教材を登録してください</option>';
+  } else {
+    sel.disabled=false;
+    for(const m of state.materials){
+      const o=document.createElement("option"); o.value=m.id; o.textContent=m.name; sel.appendChild(o);
+    }
+  }
+}
+
+function renderToday(){
+  const date=today();
+  const due = sortedTasks(state.tasks.filter(t=>!t.done && t.dueDate<=date));
+  const total = due.reduce((s,t)=>s+taskEstimate(t),0);
+  const carry = due.filter(t=>t.dueDate<date).length;
+  const w=warnings();
+
+  document.getElementById("metricToday").textContent=fmtMin(total);
+  document.getElementById("metricTodaySub").textContent=`未完了 ${due.length}件`;
+  document.getElementById("metricMode").textContent=modeLabel[modeForToday()];
+  document.getElementById("metricCapacity").textContent=`設定時間 ${fmtMin(capacityForDate(date))} / 反映後 ${fmtMin(todayCapacity())}`;
+  document.getElementById("metricCarry").textContent=carry+"件";
+  document.getElementById("metricWarnings").textContent=w.length+"件";
+  document.getElementById("todayMode").value=modeForToday();
+
+  const notice=document.getElementById("todayNotice");
+  if(!due.length){
+    notice.innerHTML='<div class="notice good">今日の未完了タスクはありません。教材を登録するか、「今日の計画を作り直す」を押してください。</div>';
+  } else if(total>todayCapacity() && modeForToday()!=="rest"){
+    notice.innerHTML=`<div class="notice bad">今日のタスク合計が、今日の設定時間を約${fmtMin(total-todayCapacity())}超えています。軽めにするなら「最低限」へ変更して計画を作り直してください。</div>`;
+  } else {
+    notice.innerHTML='<div class="notice good">上から順番にやる想定で並べています。復習・持ち越し・期限が近いものを優先します。</div>';
+  }
+
+  const list=document.getElementById("todayTasks");
+  list.innerHTML="";
+  if(!due.length){ list.innerHTML='<div class="empty">今日やることはまだありません。</div>'; }
+  else due.forEach((t,i)=>list.appendChild(taskItem(t,i+1)));
+
+  const wl=document.getElementById("warningsList");
+  wl.innerHTML="";
+  if(!w.length) wl.innerHTML='<div class="empty">今の設定では大きな期限警告はありません。</div>';
+  else w.slice(0,10).forEach(x=>{
+    const div=document.createElement("div");
+    div.className="notice bad";
+    div.textContent=x.message;
+    wl.appendChild(div);
+  });
+}
+
+function taskItem(t,num){
+  const m=mat(t.materialId);
+  const div=document.createElement("div");
+  const overdue=t.dueDate<today();
+  const dueToday=t.dueDate<=today();
+  div.className="item";
+  div.innerHTML=`
+    <div class="taskrow">
+      <span class="tasknum">${num}</span>
+      <div style="flex:1">
+        <div class="item-head">
+          <div>
+            <div class="title">${esc(m?m.name:"削除済み教材")}</div>
+            <div class="small">${t.type==="new"?"新規学習":"復習"} / ${m?rangeText(m,t.start,t.end):`${t.start}〜${t.end}`} / 予定日 ${esc(t.dueDate)}</div>
+          </div>
+          <span class="badge ${overdue?"bad":t.type==="review"?"blue":"warn"}">${overdue?"持ち越し":t.type==="review"?"復習":"新規"}</span>
+        </div>
+        <div class="badges">
+          <span class="badge">予想 ${fmtMin(taskEstimate(t))}</span>
+          <span class="badge">${weakLabel[t.weak||"ok"]}</span>
+          ${m?`<span class="badge">期限 ${esc(m.deadline)}</span><span class="badge">優先度 ${priorityLabel[m.priority]}</span>`:""}
+        </div>
+        <div class="actions">
+          <button data-fill="${t.id}">記録して完了</button>
+          <button class="secondary" data-quick="${t.id}">そのまま完了</button>
+          <button class="ghost" data-delete="${t.id}">削除</button>
+        </div>
+      </div>
+    </div>`;
+  div.querySelector("[data-fill]").onclick=()=>fillRecordFromTask(t.id);
+  div.querySelector("[data-quick]").onclick=()=>quickDone(t.id);
+  div.querySelector("[data-delete]").onclick=()=>deleteTask(t.id);
+  return div;
+}
+
+function materialItem(m){
+  const e=estimate(m);
+  const div=document.createElement("div");
+  div.className="item";
+  const rem=remainingRanges(m.id);
+  const next=rem[0];
+  div.innerHTML=`
+    <div class="item-head">
+      <div>
+        <div class="title">${esc(m.name)}</div>
+        <div class="small">${esc(m.category||"カテゴリなし")} / 範囲 ${esc(rangesToText(m.ranges,m.unitLabel))}</div>
+      </div>
+      <span class="badge ${e.remaining? "warn":"good"}">${e.remaining? "進行中":"完了"}</span>
+    </div>
+    <div class="progress"><div class="bar" style="width:${Math.min(100,Math.max(0,e.progress))}%"></div></div>
+    <div class="badges">
+      <span class="badge">進捗 ${Math.round(e.progress)}%</span>
+      <span class="badge">完了 ${e.done}/${e.targetTotal}${esc(m.unitLabel)}</span>
+      <span class="badge">残り ${e.remaining}${esc(m.unitLabel)}</span>
+      <span class="badge">残り約 ${fmtMin(e.remainingMinutes)}</span>
+      <span class="badge">1${esc(m.unitLabel)} 約${e.predicted.toFixed(1)}分</span>
+    </div>
+    <div class="twocol">
+      <div>期限：${esc(m.deadline)}（あと${e.days}日）</div>
+      <div>1日あたり必要：約${fmtMin(e.requiredPerDay)}</div>
+      <div>次の未完了：${next?rangeText(m,next.start,next.end):"なし"}</div>
+      <div>優先度：${priorityLabel[m.priority]} / 平均難易度：${e.avgDiff.toFixed(1)}</div>
+    </div>
+    ${m.memo?`<div class="small" style="margin-top:8px;">メモ：${esc(m.memo)}</div>`:""}
+    <div class="actions" style="margin-top:10px">
+      <button data-detail="${m.id}">詳細</button>
+      <button class="secondary" data-edit="${m.id}">編集</button>
+      <button class="ghost" data-del="${m.id}">削除</button>
+    </div>`;
+  div.querySelector("[data-detail]").onclick=()=>showMaterialDetail(m.id);
+  div.querySelector("[data-edit]").onclick=()=>editMat(m.id);
+  div.querySelector("[data-del]").onclick=()=>deleteMat(m.id);
+  return div;
+}
+
+function rangesToText(rs,unit){
+  if(!rs||!rs.length) return "";
+  return rs.map(r=>`${unit||"p"}.${r.start}〜${r.end}`).join(", ");
+}
+
+function addRangeRow(start="", end=""){
+  const wrap=document.getElementById("rangeRows");
+  if(!wrap) return;
+  const row=document.createElement("div");
+  row.className="range-row";
+  row.innerHTML=`
+    <label>開始番号 <input class="range-start" type="number" min="0" step="1" value="${esc(start)}" placeholder="1"></label>
+    <label>終了番号 <input class="range-end" type="number" min="0" step="1" value="${esc(end)}" placeholder="80"></label>
+    <button type="button" class="ghost range-remove">削除</button>`;
+  row.querySelector(".range-remove").onclick=()=>{
+    if(document.querySelectorAll("#rangeRows .range-row").length<=1){
+      row.querySelector(".range-start").value="";
+      row.querySelector(".range-end").value="";
+    } else row.remove();
+  };
+  wrap.appendChild(row);
+}
+
+function setRangeRows(ranges){
+  const wrap=document.getElementById("rangeRows");
+  if(!wrap) return;
+  wrap.innerHTML="";
+  const rs=(ranges&&ranges.length)?ranges:[{start:"",end:""}];
+  rs.forEach(r=>addRangeRow(r.start??"", r.end??""));
+}
+
+function collectRangeRows(){
+  const rows=[...document.querySelectorAll("#rangeRows .range-row")];
+  const ranges=[];
+  for(const row of rows){
+    let start=Number(row.querySelector(".range-start").value);
+    let end=Number(row.querySelector(".range-end").value);
+    if(!Number.isFinite(start)||!Number.isFinite(end)||row.querySelector(".range-start").value===""||row.querySelector(".range-end").value==="") continue;
+    if(start>end) [start,end]=[end,start];
+    ranges.push({start,end});
+  }
+  return mergeRanges(ranges);
+}
+
+function lastNDays(n){
+  const arr=[];
+  for(let i=n-1;i>=0;i--) arr.push(addDays(today(),-i));
+  return arr;
+}
+
+function recordsInLastDays(n){
+  const from=addDays(today(),-(n-1));
+  return state.records.filter(r=>r.date>=from && r.date<=today());
+}
+
+function materialNameFor(idv){
+  const m=mat(idv);
+  return m ? m.name : "削除済み教材";
+}
+
+function renderDailyByMaterial(el, days){
+  el.innerHTML="";
+  const rows = days.map(d=>{
+    const records = state.records.filter(r=>r.date===d);
+    const total = records.reduce((s,r)=>s+Number(r.minutes||0),0);
+    const byMat = {};
+    for(const r of records){
+      const key = r.materialId || "unknown";
+      if(!byMat[key]) byMat[key] = {name:materialNameFor(key), minutes:0};
+      byMat[key].minutes += Number(r.minutes||0);
+    }
+    return {date:d, total, materials:Object.values(byMat).sort((a,b)=>b.minutes-a.minutes)};
+  });
+  if(!rows.some(r=>r.total>0)){
+    el.innerHTML='<div class="empty">まだ記録がありません。</div>';
+    return;
+  }
+  const max = Math.max(...rows.map(r=>r.total),1);
+  rows.forEach(r=>{
+    const card=document.createElement("div");
+    card.className="day-card";
+    const materialRows = r.materials.length ? r.materials.map(x=>`
+      <div class="material-mini-row">
+        <div>${esc(x.name)}</div>
+        <div class="bartrack"><div class="barfill" style="width:${Math.round(x.minutes/Math.max(r.total,1)*100)}%"></div></div>
+        <div class="right">${fmtMin(x.minutes)}</div>
+      </div>`).join("") : '<div class="small">記録なし</div>';
+    card.innerHTML=`
+      <div class="day-card-head">
+        <strong>${esc(r.date.slice(5))}</strong>
+        <span class="badge ${r.total?"blue":""}">${fmtMin(r.total)}</span>
+      </div>
+      <div class="bartrack" style="margin-bottom:9px;"><div class="barfill" style="width:${Math.round(r.total/max*100)}%"></div></div>
+      <div class="material-mini-list">${materialRows}</div>`;
+    el.appendChild(card);
+  });
+}
+
+function renderBarList(el, rows, emptyText){
+  el.innerHTML="";
+  if(!rows.length){ el.innerHTML=`<div class="empty">${emptyText}</div>`; return; }
+  const max=Math.max(...rows.map(r=>r.value),1);
+  rows.forEach(r=>{
+    const div=document.createElement("div");
+    div.className="barrow";
+    div.innerHTML=`<div>${esc(r.label)}</div><div class="bartrack"><div class="barfill" style="width:${Math.round(r.value/max*100)}%"></div></div><div class="right">${esc(r.text)}</div>`;
+    el.appendChild(div);
+  });
+}
+
+function renderAnalysis(){
+  const stats=document.getElementById("analysisStats");
+  if(!stats) return;
+  const r7=recordsInLastDays(7);
+  const r30=recordsInLastDays(30);
+  const min7=r7.reduce((s,r)=>s+Number(r.minutes||0),0);
+  const min30=r30.reduce((s,r)=>s+Number(r.minutes||0),0);
+  const active7=new Set(r7.map(r=>r.date)).size;
+  const active30=new Set(r30.map(r=>r.date)).size;
+  const avgDiff=avg(r30.map(r=>Number(r.difficulty)))||0;
+  const weakCount=r30.filter(r=>r.weak&&r.weak!=="ok").length;
+  stats.innerHTML=`
+    <div class="statbox"><div class="small">直近7日</div><div class="num">${fmtMin(min7)}</div></div>
+    <div class="statbox"><div class="small">直近30日</div><div class="num">${fmtMin(min30)}</div></div>
+    <div class="statbox"><div class="small">7日の勉強日数</div><div class="num">${active7}/7日</div></div>
+    <div class="statbox"><div class="small">30日の平均難易度</div><div class="num">${avgDiff?avgDiff.toFixed(1):"-"}</div></div>
+    <div class="statbox"><div class="small">30日の平均/勉強日</div><div class="num">${fmtMin(active30?min30/active30:0)}</div></div>
+    <div class="statbox"><div class="small">新規学習</div><div class="num">${fmtMin(r30.filter(r=>r.type==="new").reduce((s,r)=>s+Number(r.minutes||0),0))}</div></div>
+    <div class="statbox"><div class="small">復習</div><div class="num">${fmtMin(r30.filter(r=>r.type==="review").reduce((s,r)=>s+Number(r.minutes||0),0))}</div></div>
+    <div class="statbox"><div class="small">苦手系記録</div><div class="num">${weakCount}件</div></div>`;
+
+  const dailyMode = state.settings.analysisDailyMode || "material";
+  const dailyModeEl = document.getElementById("dailyAnalysisMode");
+  if(dailyModeEl) dailyModeEl.value = dailyMode;
+  const days14 = lastNDays(14);
+  if(dailyMode === "material"){
+    renderDailyByMaterial(document.getElementById("dailyChart"), days14);
+  } else {
+    const byDay=days14.map(d=>{
+      const m=state.records.filter(r=>r.date===d).reduce((s,r)=>s+Number(r.minutes||0),0);
+      return {label:d.slice(5), value:m, text:fmtMin(m)};
+    });
+    renderBarList(document.getElementById("dailyChart"), byDay, "まだ記録がありません。");
+  }
+
+  const matRows=state.materials.map(m=>{
+    const v=r30.filter(r=>r.materialId===m.id).reduce((s,r)=>s+Number(r.minutes||0),0);
+    return {label:m.name, value:v, text:fmtMin(v)};
+  }).filter(x=>x.value>0).sort((a,b)=>b.value-a.value).slice(0,8);
+  renderBarList(document.getElementById("materialRanking"), matRows, "直近30日の教材別記録はまだありません。");
+
+  const typeRows=[
+    {label:"新規", value:r30.filter(r=>r.type==="new").reduce((s,r)=>s+Number(r.minutes||0),0), text:fmtMin(r30.filter(r=>r.type==="new").reduce((s,r)=>s+Number(r.minutes||0),0))},
+    {label:"復習", value:r30.filter(r=>r.type==="review").reduce((s,r)=>s+Number(r.minutes||0),0), text:fmtMin(r30.filter(r=>r.type==="review").reduce((s,r)=>s+Number(r.minutes||0),0))}
+  ].filter(x=>x.value>0);
+  renderBarList(document.getElementById("typeBreakdown"), typeRows, "まだ比率を出せる記録がありません。");
+
+  const weak=document.getElementById("weakRecords");
+  weak.innerHTML="";
+  const wr=state.records.filter(r=>r.weak&&r.weak!=="ok").sort((a,b)=>b.date.localeCompare(a.date)).slice(0,12);
+  if(!wr.length) weak.innerHTML='<div class="empty">苦手フラグのある記録はまだありません。</div>';
+  else wr.forEach(r=>weak.appendChild(recordItem(r)));
+}
+
+function showMaterialDetail(mid){
+  selectedMaterialId=mid;
+  renderMaterialDetail();
+  document.getElementById("materialDetailCard")?.classList.remove("hidden");
+  document.getElementById("materialDetailCard")?.scrollIntoView({behavior:"smooth", block:"start"});
+}
+
+function renderMaterialDetail(){
+  const card=document.getElementById("materialDetailCard");
+  const box=document.getElementById("materialDetail");
+  const title=document.getElementById("materialDetailTitle");
+  if(!card||!box||!title) return;
+  const m=mat(selectedMaterialId);
+  if(!m){ card.classList.add("hidden"); box.innerHTML=""; return; }
+  card.classList.remove("hidden");
+  const e=estimate(m);
+  const done=completedRanges(m.id);
+  const rem=remainingRanges(m.id);
+  const recs=recordsFor(m.id).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,8);
+  const pending=state.tasks.filter(t=>t.materialId===m.id&&!t.done).sort((a,b)=>a.dueDate.localeCompare(b.dueDate)).slice(0,8);
+  title.textContent=`教材詳細：${m.name}`;
+  box.innerHTML=`
+    <div class="statgrid">
+      <div class="statbox"><div class="small">進捗</div><div class="num">${Math.round(e.progress)}%</div></div>
+      <div class="statbox"><div class="small">完了範囲</div><div class="num">${e.done}/${e.targetTotal}${esc(m.unitLabel)}</div></div>
+      <div class="statbox"><div class="small">残り時間</div><div class="num">${fmtMin(e.remainingMinutes)}</div></div>
+      <div class="statbox"><div class="small">1${esc(m.unitLabel)}予測</div><div class="num">${e.predicted.toFixed(1)}分</div></div>
+    </div>
+    <div class="progress"><div class="bar" style="width:${Math.min(100,Math.max(0,e.progress))}%"></div></div>
+    <div class="grid" style="margin-top:12px;">
+      <div class="span-6">
+        <h3>範囲</h3>
+        <div class="small"><strong>対象：</strong>${esc(rangesToText(m.ranges,m.unitLabel)||"なし")}</div>
+        <div class="small"><strong>完了：</strong>${esc(rangesToText(done,m.unitLabel)||"なし")}</div>
+        <div class="small"><strong>未完了：</strong>${esc(rangesToText(rem,m.unitLabel)||"なし")}</div>
+      </div>
+      <div class="span-6">
+        <h3>予定</h3>
+        <div class="small">期限：${esc(m.deadline)} / あと${e.days}日</div>
+        <div class="small">1日あたり必要：約${fmtMin(e.requiredPerDay)}</div>
+        <div class="small">優先度：${priorityLabel[m.priority]} / 平均難易度：${e.avgDiff.toFixed(1)}</div>
+      </div>
+      <div class="span-6">
+        <h3>最近の記録</h3>
+        <div id="detailRecords" class="list"></div>
+      </div>
+      <div class="span-6">
+        <h3>未完了タスク</h3>
+        <div id="detailTasks" class="list"></div>
+      </div>
+    </div>`;
+  const dr=box.querySelector("#detailRecords");
+  if(!recs.length) dr.innerHTML='<div class="empty">この教材の記録はまだありません。</div>';
+  else recs.forEach(r=>dr.appendChild(recordItem(r)));
+  const dt=box.querySelector("#detailTasks");
+  if(!pending.length) dt.innerHTML='<div class="empty">この教材の未完了タスクはありません。</div>';
+  else pending.forEach((t,i)=>dt.appendChild(taskItem(t,i+1)));
+}
+
+
+function renderMaterials(){
+  const list=document.getElementById("materialList");
+  list.innerHTML="";
+  if(!state.materials.length){ list.innerHTML='<div class="empty">まだ教材がありません。左から登録してください。</div>'; return; }
+  state.materials
+    .slice()
+    .sort((a,b)=>dateObj(a.deadline)-dateObj(b.deadline))
+    .forEach(m=>list.appendChild(materialItem(m)));
+  renderMaterialDetail();
+}
+
+function recordItem(r){
+  const m=mat(r.materialId);
+  const div=document.createElement("div");
+  div.className="item";
+  div.innerHTML=`
+    <div class="item-head">
+      <div>
+        <div class="title">${esc(m?m.name:"削除済み教材")}</div>
+        <div class="small">${esc(r.date)} / ${r.type==="new"?"新規":"復習"} / ${m?rangeText(m,r.start,r.end):`${r.start}〜${r.end}`}</div>
+      </div>
+      <span class="badge ${r.weak==="weak"||r.weak==="redo"?"bad":r.weak==="uncertain"?"warn":"good"}">${weakLabel[r.weak||"ok"]}</span>
+    </div>
+    <div class="badges">
+      <span class="badge">${fmtMin(r.minutes)}</span>
+      <span class="badge">難易度 ${r.difficulty}</span>
+      <span class="badge">集中度 ${r.focus}</span>
+    </div>
+    ${r.memo?`<div class="small">メモ：${esc(r.memo)}</div>`:""}
+    <div class="actions" style="margin-top:8px"><button class="ghost" data-delrec="${r.id}">削除</button></div>`;
+  div.querySelector("[data-delrec]").onclick=()=>deleteRecord(r.id);
+  return div;
+}
+
+function renderRecords(){
+  const list=document.getElementById("recordList");
+  list.innerHTML="";
+  if(!state.records.length){ list.innerHTML='<div class="empty">まだ記録がありません。</div>'; return; }
+  state.records.slice().sort((a,b)=>(b.date+b.createdAt).localeCompare(a.date+a.createdAt)).slice(0,50).forEach(r=>list.appendChild(recordItem(r)));
+}
+
+function renderTasks(){
+  const p=document.getElementById("pendingTasks"), d=document.getElementById("doneTasks");
+  p.innerHTML=""; d.innerHTML="";
+  const pending=sortedTasks(state.tasks.filter(t=>!t.done));
+  const done=state.tasks.filter(t=>t.done).sort((a,b)=>(b.doneAt||"").localeCompare(a.doneAt||"")).slice(0,50);
+  if(!pending.length) p.innerHTML='<div class="empty">未完了タスクはありません。</div>';
+  else pending.forEach((t,i)=>p.appendChild(taskItem(t,i+1)));
+  if(!done.length) d.innerHTML='<div class="empty">完了済みタスクはまだありません。</div>';
+  else done.forEach((t,i)=>{
+    const item=taskItem(t,i+1);
+    item.querySelectorAll("button").forEach(b=>b.remove());
+    const actions=document.createElement("div");
+    actions.className="actions"; actions.style.marginTop="8px";
+    const undo=document.createElement("button"); undo.className="secondary"; undo.textContent="未完了に戻す"; undo.onclick=()=>undoTask(t.id);
+    actions.appendChild(undo); item.appendChild(actions);
+    d.appendChild(item);
+  });
+}
+
+function renderSettings(){
+  for(let i=0;i<7;i++) document.getElementById("cap"+i).value=state.settings.capacities[i]??0;
+  const boundaryEl = document.getElementById("dayBoundaryHour");
+  if(boundaryEl) boundaryEl.value = String(state.settings.dayBoundaryHour ?? 4);
+  const help = document.getElementById("boundaryHelp");
+  if(help) help.textContent = `現在時刻：${actualDateTimeLabel()} / アプリ上の今日：${today()}。${state.settings.dayBoundaryHour ?? 4}:00より前の記録・タスクは前日扱いになります。`;
+}
+
+function fillRecordFromTask(taskId){
+  const t=state.tasks.find(x=>x.id===taskId); if(!t) return;
+  const m=mat(t.materialId); if(!m) return;
+  switchTab("record");
+  document.getElementById("recordTitle").textContent="タスクを記録して完了";
+  document.getElementById("recordTaskId").value=t.id;
+  document.getElementById("recMaterial").value=t.materialId;
+  document.getElementById("recType").value=t.type;
+  document.getElementById("recDate").value=today();
+  document.getElementById("recStart").value=t.start;
+  document.getElementById("recEnd").value=t.end;
+  document.getElementById("recMinutes").value=taskEstimate(t);
+  document.getElementById("recDiff").value=m.defaultDifficulty||3;
+  document.getElementById("recFocus").value=3;
+  document.getElementById("recWeak").value=t.weak||"ok";
+  document.getElementById("recMemo").value="";
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+
+function quickDone(taskId){
+  const t=state.tasks.find(x=>x.id===taskId); if(!t) return;
+  const m=mat(t.materialId); if(!m) return;
+  const record={
+    id:id("rec"), materialId:t.materialId, type:t.type, date:today(),
+    start:t.start, end:t.end, minutes:taskEstimate(t),
+    difficulty:Number(m.defaultDifficulty||3), focus:3, weak:t.weak||"ok",
+    memo:"タスクからそのまま完了", taskId:t.id, createdAt:new Date().toISOString()
+  };
+  if(t.type==="new"){
+    const overlap = intersectAny({start:record.start,end:record.end}, completedRanges(record.materialId));
+    if(overlap.length && !confirm("この範囲はすでに一部記録済みです。それでも完了にしますか？")) return;
+  }
+  state.records.push(record);
+  if(record.type==="new") makeReviewTasks(record);
+  t.done=true; t.doneAt=new Date().toISOString();
+  save(); render(); toast("完了にしました");
+}
+
+function deleteTask(taskId){
+  if(!confirm("このタスクを削除しますか？")) return;
+  state.tasks=state.tasks.filter(t=>t.id!==taskId);
+  save(); render(); toast("タスクを削除しました");
+}
+function undoTask(taskId){
+  const t=state.tasks.find(x=>x.id===taskId); if(!t) return;
+  t.done=false; delete t.doneAt; save(); render(); toast("未完了に戻しました");
+}
+
+function editMat(mid){
+  const m=mat(mid); if(!m) return;
+  document.getElementById("materialTitle").textContent="教材を編集";
+  document.getElementById("materialId").value=m.id;
+  document.getElementById("matName").value=m.name;
+  document.getElementById("matCategory").value=m.category||"";
+  document.getElementById("matUnit").value=m.unitLabel||"p";
+  document.getElementById("matDeadline").value=m.deadline;
+  document.getElementById("matPriority").value=m.priority||"normal";
+  setRangeRows(m.ranges&&m.ranges.length?m.ranges:[{start:"",end:""}]);
+  document.getElementById("matDefaultDiff").value=m.defaultDifficulty||3;
+  document.getElementById("matBaseMin").value=m.baseMinutes||6;
+  document.getElementById("matMemo").value=m.memo||"";
+  switchTab("materials");
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+
+function resetMatForm(){
+  document.getElementById("materialTitle").textContent="教材を登録";
+  document.getElementById("materialForm").reset();
+  document.getElementById("materialId").value="";
+  setRangeRows([{start:"",end:""}]);
+  document.getElementById("matUnit").value="p";
+  document.getElementById("matPriority").value="normal";
+  document.getElementById("matDefaultDiff").value=3;
+  document.getElementById("matBaseMin").value=6;
+}
+
+function deleteMat(mid){
+  const m=mat(mid); if(!m) return;
+  if(!confirm(`「${m.name}」を削除します。関連する記録とタスクも削除されます。`)) return;
+  if(selectedMaterialId===mid) selectedMaterialId=null;
+  state.materials=state.materials.filter(x=>x.id!==mid);
+  state.records=state.records.filter(x=>x.materialId!==mid);
+  state.tasks=state.tasks.filter(x=>x.materialId!==mid);
+  save(); render(); toast("教材を削除しました");
+}
+
+function deleteRecord(rid){
+  if(!confirm("記録を削除します。関連する復習タスクも削除します。")) return;
+  state.records=state.records.filter(r=>r.id!==rid);
+  state.tasks=state.tasks.filter(t=>t.sourceRecordId!==rid && t.recordId!==rid);
+  save(); render(); toast("記録を削除しました");
+}
+
+function switchTab(tab){
+  document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.tab===tab));
+  document.querySelectorAll(".screen").forEach(x=>x.classList.toggle("hidden",x.id!==tab));
+}
+
+function exportData(){
+  const blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url; a.download=`study-load-planner-v04-backup-${today()}.json`;
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  toast("バックアップを書き出しました");
+}
+
+function importData(file){
+  if(!file) return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const imported=JSON.parse(reader.result);
+      if(!Array.isArray(imported.materials)||!Array.isArray(imported.records)) throw new Error("invalid");
+      if(!confirm("現在のデータをバックアップ内容で置き換えます。よろしいですか？")) return;
+      state={...defaultState(), ...imported, settings:{...defaultState().settings, ...(imported.settings||{}), capacities:{...defaultState().settings.capacities, ...((imported.settings||{}).capacities||{})}, todayModes:{...((imported.settings||{}).todayModes||{})}}};
+      save(); render(); toast("読み込みました");
+    }catch(e){ alert("読み込みに失敗しました。v0.2/v0.3/v0.4のJSONバックアップか確認してください。"); }
+  };
+  reader.readAsText(file);
+}
+
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>switchTab(t.dataset.tab));
+const dailyAnalysisModeEl = document.getElementById("dailyAnalysisMode");
+if(dailyAnalysisModeEl){
+  dailyAnalysisModeEl.onchange = e => {
+    state.settings.analysisDailyMode = e.target.value;
+    save();
+    renderAnalysis();
+  };
+}
+document.getElementById("recDate").value=today();
+
+document.getElementById("materialForm").onsubmit=e=>{
+  e.preventDefault();
+  const ranges=collectRangeRows();
+  if(!ranges.length){ alert("範囲の開始番号と終了番号を入れてください。"); return; }
+  const mid=document.getElementById("materialId").value || id("mat");
+  const obj={
+    id:mid,
+    name:document.getElementById("matName").value.trim(),
+    category:document.getElementById("matCategory").value.trim(),
+    unitLabel:document.getElementById("matUnit").value.trim()||"p",
+    deadline:document.getElementById("matDeadline").value,
+    priority:document.getElementById("matPriority").value,
+    ranges,
+    defaultDifficulty:Number(document.getElementById("matDefaultDiff").value),
+    baseMinutes:Number(document.getElementById("matBaseMin").value||6),
+    memo:document.getElementById("matMemo").value.trim(),
+    updatedAt:new Date().toISOString()
+  };
+  if(!obj.name){ alert("教材名を入れてください。"); return; }
+  const idx=state.materials.findIndex(m=>m.id===mid);
+  if(idx>=0) state.materials[idx]={...state.materials[idx],...obj};
+  else state.materials.push({...obj,createdAt:new Date().toISOString()});
+  save(); resetMatForm(); render(); toast(idx>=0?"教材を更新しました":"教材を登録しました");
+};
+
+document.getElementById("cancelMat").onclick=resetMatForm;
+document.getElementById("addRangeBtn").onclick=()=>addRangeRow();
+document.getElementById("closeMaterialDetail").onclick=()=>{ selectedMaterialId=null; document.getElementById("materialDetailCard").classList.add("hidden"); };
+setRangeRows([{start:"",end:""}]);
+
+document.getElementById("recordForm").onsubmit=e=>{
+  e.preventDefault();
+  const taskId=document.getElementById("recordTaskId").value;
+  const record={
+    id:id("rec"),
+    materialId:document.getElementById("recMaterial").value,
+    type:document.getElementById("recType").value,
+    date:document.getElementById("recDate").value||today(),
+    start:Number(document.getElementById("recStart").value),
+    end:Number(document.getElementById("recEnd").value),
+    minutes:Number(document.getElementById("recMinutes").value),
+    difficulty:Number(document.getElementById("recDiff").value),
+    focus:Number(document.getElementById("recFocus").value),
+    weak:document.getElementById("recWeak").value,
+    memo:document.getElementById("recMemo").value.trim(),
+    taskId:taskId||null,
+    createdAt:new Date().toISOString()
+  };
+  if(!mat(record.materialId)){ alert("教材を選んでください。"); return; }
+  if(record.start>record.end) [record.start,record.end]=[record.end,record.start];
+  if(record.minutes<=0){ alert("時間を入れてください。"); return; }
+
+  const m=mat(record.materialId);
+  const inTarget = intersectAny({start:record.start,end:record.end}, m.ranges||[]);
+  if(!inTarget.length && !confirm("この範囲は教材の対象範囲外です。それでも記録しますか？")) return;
+
+  if(record.type==="new"){
+    const overlap = intersectAny({start:record.start,end:record.end}, completedRanges(record.materialId));
+    if(overlap.length){
+      const txt=overlap.map(r=>rangeText(m,r.start,r.end)).join(", ");
+      if(!confirm(`すでに記録済みの範囲と重なっています：${txt}\nそれでも記録しますか？`)) return;
+    }
+  }
+
+  state.records.push(record);
+  if(record.type==="new" && document.getElementById("recAutoReview").checked) makeReviewTasks(record);
+  if(taskId){
+    const t=state.tasks.find(x=>x.id===taskId);
+    if(t){ t.done=true; t.doneAt=new Date().toISOString(); t.recordId=record.id; }
+  }
+  save();
+  document.getElementById("recordForm").reset();
+  document.getElementById("recordTitle").textContent="学習を記録";
+  document.getElementById("recordTaskId").value="";
+  document.getElementById("recDate").value=today();
+  document.getElementById("recDiff").value=3;
+  document.getElementById("recFocus").value=3;
+  document.getElementById("recWeak").value="ok";
+  document.getElementById("recAutoReview").checked=true;
+  render(); toast("記録しました");
+};
+
+document.getElementById("modeForm").onsubmit=e=>{
+  e.preventDefault();
+  state.settings.todayModes[today()]=document.getElementById("todayMode").value;
+  save(); buildTodayPlan(true); render(); toast("今日のモードを保存しました");
+};
+
+document.getElementById("regenPlan").onclick=()=>{
+  if(!confirm("今日作成済みの未完了・自動生成タスクを作り直します。持ち越しや復習タスクは残ります。")) return;
+  buildTodayPlan(true); render(); toast("今日の計画を作り直しました");
+};
+
+document.getElementById("capacityForm").onsubmit=e=>{
+  e.preventDefault();
+  for(let i=0;i<7;i++) state.settings.capacities[i]=Number(document.getElementById("cap"+i).value||0);
+  save(); buildTodayPlan(true); render(); toast("曜日別時間を保存しました");
+};
+
+document.getElementById("boundaryForm").onsubmit=e=>{
+  e.preventDefault();
+  state.settings.dayBoundaryHour = Number(document.getElementById("dayBoundaryHour").value);
+  document.getElementById("recDate").value = today();
+  save(); buildTodayPlan(true); render(); toast("日付変更時刻を保存しました");
+};
+
+document.getElementById("exportBtn").onclick=exportData;
+document.getElementById("exportTop").onclick=exportData;
+document.getElementById("importFile").onchange=e=>importData(e.target.files[0]);
+document.getElementById("importTop").onchange=e=>importData(e.target.files[0]);
+
+document.getElementById("resetAll").onclick=()=>{
+  if(!confirm("全データを削除します。バックアップは取りましたか？")) return;
+  if(!confirm("本当に削除しますか？元に戻せません。")) return;
+  state=defaultState(); save(); render(); toast("全データを削除しました");
+};
+
+render();
+</script>
+</body>
+</html>
