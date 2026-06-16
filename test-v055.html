@@ -1,0 +1,2804 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>学習負荷プランナー v0.5.5</title>
+  <style>
+    :root {
+      --bg: #f7f3ee;
+      --card: rgba(255,255,255,.92);
+      --ink: #2c2925;
+      --muted: #7b7168;
+      --line: #e7ded4;
+      --accent: #7b5b43;
+      --accent2: #caa381;
+      --good: #2f7d55;
+      --warn: #b8752b;
+      --bad: #b34b4b;
+      --blue: #4e6f8c;
+      --shadow: 0 14px 40px rgba(35, 26, 17, 0.08);
+      --r: 18px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", "YuGothic", Meiryo, sans-serif;
+      color: var(--ink);
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 12% 0%, rgba(202, 163, 129, .27), transparent 30rem),
+        radial-gradient(circle at 85% 8%, rgba(123, 91, 67, .12), transparent 22rem),
+        linear-gradient(180deg, #fffdfa, var(--bg));
+    }
+    header, main { max-width: 1220px; margin: 0 auto; padding: 18px; }
+    header { padding-top: 26px; padding-bottom: 4px; }
+    .head {
+      display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap;
+    }
+    h1 { margin:0; font-size:clamp(24px,4vw,38px); letter-spacing:.03em; }
+    .sub { color:var(--muted); margin:8px 0 0; line-height:1.6; font-size:14px; }
+    .tabs {
+      display:flex; gap:8px; flex-wrap:wrap; position:sticky; top:0; z-index:20;
+      padding:10px 0; background:rgba(247,243,238,.88); backdrop-filter:blur(12px);
+      margin: 6px 0 14px;
+    }
+    .tab, button, .filebtn {
+      border:0; border-radius:999px; padding:10px 13px; cursor:pointer;
+      font-weight:800; font-size:14px; font:inherit; text-decoration:none;
+      display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    }
+    .tab { background:rgba(255,255,255,.74); color:var(--ink); border:1px solid var(--line); }
+    .tab.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+    button, .filebtn { background:var(--accent); color:#fff; border-radius:12px; }
+    button.secondary, .filebtn.secondary { background:#eee5dc; color:var(--ink); }
+    button.ghost { background:transparent; color:var(--accent); border:1px solid var(--line); }
+    button.danger { background:var(--bad); }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    .grid { display:grid; grid-template-columns:repeat(12,1fr); gap:14px; }
+    .span-12 { grid-column:span 12; }
+    .span-8 { grid-column:span 8; }
+    .span-7 { grid-column:span 7; }
+    .span-6 { grid-column:span 6; }
+    .span-5 { grid-column:span 5; }
+    .span-4 { grid-column:span 4; }
+    .span-3 { grid-column:span 3; }
+    @media (max-width: 900px) {
+      header, main { padding-left:12px; padding-right:12px; }
+      .span-8,.span-7,.span-6,.span-5,.span-4,.span-3 { grid-column:span 12; }
+    }
+    .card {
+      background:var(--card); border:1px solid rgba(231,222,212,.95);
+      border-radius:var(--r); box-shadow:var(--shadow); padding:16px;
+    }
+    h2 { margin:0 0 12px; font-size:18px; }
+    h3 { margin:0 0 10px; font-size:15px; }
+    .metric { font-size:26px; font-weight:900; margin:4px 0 2px; }
+    .small { color:var(--muted); font-size:12px; line-height:1.6; }
+    .muted { color:var(--muted); }
+    .hidden { display:none !important; }
+    form { display:grid; gap:12px; }
+    label { display:grid; gap:6px; font-size:13px; font-weight:800; color:#4d4238; }
+    input, select, textarea {
+      width:100%; border:1px solid var(--line); background:#fff; color:var(--ink);
+      border-radius:12px; padding:11px 12px; font:inherit; outline:none;
+    }
+    input:focus, select:focus, textarea:focus { border-color:var(--accent2); box-shadow:0 0 0 4px rgba(202,163,129,.19); }
+    textarea { resize:vertical; min-height:80px; }
+    input[type=file] { display:none; }
+    .row2 { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+    .row3 { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+    .row4 { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+    @media (max-width: 680px) { .row2,.row3,.row4 { grid-template-columns:1fr; } }
+    .actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    .list { display:grid; gap:10px; }
+    .item {
+      border:1px solid var(--line); border-radius:16px; padding:12px;
+      background:rgba(255,255,255,.78);
+    }
+    .item-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:8px; }
+    .title { font-weight:900; line-height:1.35; }
+    .badges { display:flex; flex-wrap:wrap; gap:6px; margin:7px 0; }
+    .badge {
+      border-radius:999px; background:#f1e8df; color:#5b4a3c; padding:4px 8px;
+      font-size:12px; font-weight:850; white-space:nowrap;
+    }
+    .badge.good { color:var(--good); background:rgba(47,125,85,.12); }
+    .badge.warn { color:var(--warn); background:rgba(184,117,43,.13); }
+    .badge.bad { color:var(--bad); background:rgba(179,75,75,.12); }
+    .badge.blue { color:var(--blue); background:rgba(78,111,140,.12); }
+    .progress { height:11px; background:#eee6de; border-radius:999px; overflow:hidden; margin:10px 0 6px; }
+    .bar { height:100%; width:0%; background:linear-gradient(90deg,var(--accent2),var(--accent)); border-radius:999px; transition:.25s; }
+    .twocol { display:grid; grid-template-columns:1fr 1fr; gap:7px; color:var(--muted); font-size:13px; line-height:1.55; }
+    @media (max-width: 560px) { .twocol { grid-template-columns:1fr; } }
+    .empty {
+      border:1px dashed var(--line); background:#fffaf4; color:var(--muted);
+      border-radius:15px; padding:14px; line-height:1.65; font-size:13px;
+    }
+    .notice {
+      border:1px solid #efd3b7; background:#fff7ec; color:#5b4632;
+      border-radius:15px; padding:12px; line-height:1.65; font-size:13px;
+    }
+    .notice.bad { border-color:rgba(179,75,75,.28); background:rgba(179,75,75,.06); color:#743434; }
+    .notice.good { border-color:rgba(47,125,85,.25); background:rgba(47,125,85,.06); color:#245f42; }
+    .divider { height:1px; background:var(--line); margin:12px 0; }
+    .toast {
+      position:fixed; left:50%; bottom:18px; transform:translateX(-50%);
+      background:rgba(44,41,37,.94); color:#fff; padding:11px 14px;
+      border-radius:999px; font-weight:900; z-index:200; opacity:0; pointer-events:none; transition:.2s;
+      font-size:13px;
+    }
+    .toast.show { opacity:1; transform:translateX(-50%) translateY(-4px); }
+    .checkline { display:flex; gap:8px; align-items:center; font-weight:800; color:var(--ink); }
+    .checkline input { width:auto; }
+    .tasknum {
+      width:30px; height:30px; border-radius:50%; background:#eee5dc; display:inline-flex;
+      align-items:center; justify-content:center; font-weight:900; flex:0 0 auto;
+    }
+    .taskrow { display:flex; gap:10px; align-items:flex-start; }
+    .rangehint { font-size:12px; color:var(--muted); margin-top:-3px; }
+    .dangerbox { border-color:rgba(179,75,75,.24); background:rgba(179,75,75,.04); }
+
+    .range-rows { display:grid; gap:8px; }
+    .range-row { display:grid; grid-template-columns:1fr 1fr auto; gap:8px; align-items:end; }
+    .range-row button { padding:10px 12px; }
+    @media (max-width: 620px) { .range-row { grid-template-columns:1fr 1fr; } .range-row button { grid-column:1 / -1; } }
+    .statgrid { display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:10px; }
+    @media (max-width: 760px) { .statgrid { grid-template-columns:repeat(2, minmax(0,1fr)); } }
+    .statbox { border:1px solid var(--line); background:rgba(255,255,255,.78); border-radius:15px; padding:12px; }
+    .statbox .num { font-size:23px; font-weight:900; margin-top:4px; }
+    .barlist { display:grid; gap:9px; }
+    .barrow { display:grid; grid-template-columns:72px 1fr 74px; gap:8px; align-items:center; font-size:12px; color:var(--muted); }
+    .bartrack { height:12px; background:#eee6de; border-radius:999px; overflow:hidden; }
+    .barfill { height:100%; background:linear-gradient(90deg,var(--accent2),var(--accent)); border-radius:999px; width:0%; }
+    .detail-panel { border:1px solid var(--line); background:rgba(255,255,255,.78); border-radius:16px; padding:12px; }
+    .mini-select-row { display:flex; gap:8px; flex-wrap:wrap; align-items:end; justify-content:space-between; margin-bottom:10px; }
+    .mini-select-row label { min-width:180px; }
+    .day-detail { display:grid; gap:10px; }
+    .day-card { border:1px solid var(--line); border-radius:15px; padding:12px; background:rgba(255,255,255,.74); }
+    .day-card-head { display:flex; justify-content:space-between; gap:10px; align-items:center; margin-bottom:8px; }
+    .material-mini-list { display:grid; gap:7px; }
+    .material-mini-row { display:grid; grid-template-columns:minmax(90px, 1fr) 2fr 70px; gap:8px; align-items:center; font-size:12px; color:var(--muted); }
+    @media (max-width: 620px) { .material-mini-row { grid-template-columns:1fr; } }
+
+    .auth-card { margin: 8px 0 14px; }
+    .auth-top { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap; }
+    .auth-form { display:flex; gap:8px; flex-wrap:wrap; align-items:end; }
+    .auth-form label { min-width:260px; }
+    .auth-status { display:inline-flex; align-items:center; gap:7px; border:1px solid var(--line); background:rgba(255,255,255,.72); padding:8px 10px; border-radius:999px; color:var(--muted); font-size:12px; font-weight:850; }
+    .dot { width:9px; height:9px; border-radius:50%; background:var(--bad); display:inline-block; }
+    .dot.good { background:var(--good); }
+    .cloud-line { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+     .cloud-pill { border-radius:999px; padding:5px 9px; font-size:12px; font-weight:850; background:#f1e8df; color:#5b4a3c; }
+    .cloud-pill.good { color:var(--good); background:rgba(47,125,85,.12); }
+    .cloud-pill.warn { color:var(--warn); background:rgba(184,117,43,.13); }
+    .cloud-pill.bad { color:var(--bad); background:rgba(179,75,75,.12); }
+    .auth-message { margin-top:10px; border:1px solid var(--line); border-radius:14px; padding:10px 12px; font-size:13px; line-height:1.55; background:#fffaf4; color:#5b4a3c; }
+    .auth-message.good { border-color:rgba(47,125,85,.25); background:rgba(47,125,85,.06); color:#245f42; }
+    .auth-message.warn { border-color:rgba(184,117,43,.25); background:rgba(184,117,43,.07); color:#7a4d18; }
+    .auth-message.bad { border-color:rgba(179,75,75,.28); background:rgba(179,75,75,.06); color:#743434; }
+
+    .auth-form.password { display:grid; grid-template-columns:minmax(220px,1fr) minmax(180px,1fr); gap:10px; align-items:end; max-width:640px; }
+    .auth-form.password .auth-buttons { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:8px; }
+    @media (max-width: 680px) { .auth-form.password { grid-template-columns:1fr; } }
+    .timer-box { border:1px solid var(--line); background:#fffaf4; border-radius:16px; padding:12px; display:grid; gap:10px; }
+    .timer-display { font-size:34px; font-weight:950; letter-spacing:.04em; font-variant-numeric:tabular-nums; }
+    .timer-actions { display:flex; flex-wrap:wrap; gap:8px; }
+    .timer-status { border:1px solid var(--line); background:rgba(255,255,255,.72); border-radius:12px; padding:8px 10px; color:var(--muted); font-size:12px; line-height:1.55; }
+    body[data-theme="dark"] .timer-status { background:rgba(42,42,45,.7); color:var(--muted); }
+
+    /* v0.5.3 additions */
+    body[data-theme="light"] {
+      --bg:#f7f8fb; --card:rgba(255,255,255,.96); --ink:#22262a; --muted:#6d747c; --line:#dde3ea; --accent:#56616f; --accent2:#aab4c2; --blue:#526f9b;
+      background:linear-gradient(180deg,#ffffff,var(--bg));
+    }
+    body[data-theme="dark"] {
+      --bg:#151515; --card:rgba(35,35,38,.94); --ink:#f2eee8; --muted:#b8b0a8; --line:#45413d; --accent:#c7a27f; --accent2:#8b6d54; --good:#75c095; --warn:#d7a45f; --bad:#d47b7b; --blue:#86a8c7;
+      background:radial-gradient(circle at 10% 0%,rgba(199,162,127,.13),transparent 26rem),linear-gradient(180deg,#202020,var(--bg));
+    }
+    body[data-theme="pink"] {
+      --bg:#fff3f5; --card:rgba(255,255,255,.94); --ink:#38282d; --muted:#7f6870; --line:#efd8df; --accent:#a35d72; --accent2:#e0a8b6; --blue:#806b9b;
+      background:radial-gradient(circle at 10% 0%,rgba(224,168,182,.28),transparent 28rem),linear-gradient(180deg,#fffafd,var(--bg));
+    }
+    body[data-theme="blue"] {
+      --bg:#eef6fb; --card:rgba(255,255,255,.94); --ink:#24313a; --muted:#61727d; --line:#d7e6ee; --accent:#4d7792; --accent2:#9bc2d6; --blue:#4d7792;
+      background:radial-gradient(circle at 10% 0%,rgba(155,194,214,.3),transparent 28rem),linear-gradient(180deg,#fbfeff,var(--bg));
+    }
+    body[data-theme="dark"] input, body[data-theme="dark"] select, body[data-theme="dark"] textarea { background:#242426; color:var(--ink); border-color:var(--line); }
+    body[data-theme="dark"] .item, body[data-theme="dark"] .statbox, body[data-theme="dark"] .detail-panel, body[data-theme="dark"] .day-card { background:rgba(42,42,45,.78); }
+    body[data-theme="dark"] .notice, body[data-theme="dark"] .empty, body[data-theme="dark"] .timer-box { background:rgba(45,42,38,.86); }
+    body[data-theme="dark"] .tabs { background:rgba(21,21,21,.88); }
+    .analysis-toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:end; justify-content:space-between; margin-bottom:12px; }
+    .segmented { display:flex; gap:6px; flex-wrap:wrap; }
+    .segmented button { background:#eee5dc; color:var(--ink); }
+    .segmented button.active { background:var(--accent); color:#fff; }
+    body[data-theme="dark"] .segmented button { background:#35312e; color:var(--ink); border:1px solid var(--line); }
+    .period-controls { display:flex; gap:8px; flex-wrap:wrap; align-items:end; }
+    .period-controls label { min-width:130px; }
+    .vchart-wrap { border:1px solid var(--line); border-radius:16px; background:rgba(255,255,255,.72); padding:14px 12px 10px; overflow-x:auto; }
+    body[data-theme="dark"] .vchart-wrap { background:rgba(42,42,45,.7); }
+    .vchart-axis-label { color:var(--muted); font-size:12px; margin-bottom:8px; }
+    .vchart { min-height:260px; display:flex; align-items:flex-end; gap:8px; padding:30px 4px 8px; border-left:1px solid var(--line); border-bottom:1px solid var(--line); background:linear-gradient(180deg, transparent 0 24%, rgba(127,127,127,.08) 24% 25%, transparent 25% 49%, rgba(127,127,127,.08) 49% 50%, transparent 50% 74%, rgba(127,127,127,.08) 74% 75%, transparent 75% 100%); }
+    .vbar-col { min-width:42px; flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:6px; height:220px; }
+    .vbar-value { font-size:11px; color:var(--muted); min-height:28px; text-align:center; display:flex; align-items:flex-end; }
+    .vbar { width:70%; min-height:3px; border-radius:10px 10px 0 0; background:linear-gradient(180deg,var(--accent2),var(--accent)); }
+    .vbar-label { font-size:12px; color:var(--muted); white-space:nowrap; }
+    .future-list { display:grid; gap:10px; }
+    .theme-preview { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .theme-dot { width:22px; height:22px; border-radius:50%; border:1px solid var(--line); background:var(--accent); }
+
+
+    /* v0.5.4 dark theme visibility fixes */
+    body[data-theme="dark"] {
+      --bg:#101113;
+      --card:rgba(34,35,39,.96);
+      --ink:#f7f1e8;
+      --muted:#d1c4b8;
+      --line:#5f5650;
+      --accent:#d8ad84;
+      --accent2:#f0c99f;
+      --good:#8ed8aa;
+      --warn:#efbd74;
+      --bad:#ee8f8f;
+      --blue:#9ec5e6;
+      background:radial-gradient(circle at 12% 0%,rgba(216,173,132,.18),transparent 28rem),linear-gradient(180deg,#1b1c20,var(--bg));
+    }
+    body[data-theme="dark"] .card,
+    body[data-theme="dark"] .auth-status,
+    body[data-theme="dark"] .vchart-wrap {
+      background:rgba(34,35,39,.96);
+      border-color:var(--line);
+    }
+    body[data-theme="dark"] label,
+    body[data-theme="dark"] .title,
+    body[data-theme="dark"] h1,
+    body[data-theme="dark"] h2,
+    body[data-theme="dark"] h3 {
+      color:var(--ink);
+    }
+    body[data-theme="dark"] .small,
+    body[data-theme="dark"] .muted,
+    body[data-theme="dark"] .sub,
+    body[data-theme="dark"] .vbar-label,
+    body[data-theme="dark"] .vbar-value,
+    body[data-theme="dark"] .vchart-axis-label,
+    body[data-theme="dark"] .twocol,
+    body[data-theme="dark"] .barrow,
+    body[data-theme="dark"] .material-mini-row {
+      color:var(--muted);
+    }
+    body[data-theme="dark"] input,
+    body[data-theme="dark"] select,
+    body[data-theme="dark"] textarea {
+      background:#18191d;
+      color:var(--ink);
+      border-color:#70665d;
+    }
+    body[data-theme="dark"] input::placeholder,
+    body[data-theme="dark"] textarea::placeholder {
+      color:#9f9288;
+    }
+    body[data-theme="dark"] .tab {
+      background:rgba(45,46,51,.96);
+      color:var(--ink);
+      border-color:var(--line);
+    }
+    body[data-theme="dark"] .tab.active,
+    body[data-theme="dark"] button,
+    body[data-theme="dark"] .filebtn {
+      background:var(--accent);
+      color:#1b1510;
+      border:1px solid var(--accent);
+    }
+    body[data-theme="dark"] button.secondary,
+    body[data-theme="dark"] .filebtn.secondary,
+    body[data-theme="dark"] button.ghost,
+    body[data-theme="dark"] .segmented button {
+      background:#312d2a;
+      color:var(--ink);
+      border:1px solid var(--line);
+    }
+    body[data-theme="dark"] .segmented button.active {
+      background:var(--accent);
+      color:#1b1510;
+      border-color:var(--accent);
+    }
+    body[data-theme="dark"] .item,
+    body[data-theme="dark"] .statbox,
+    body[data-theme="dark"] .detail-panel,
+    body[data-theme="dark"] .day-card,
+    body[data-theme="dark"] .notice,
+    body[data-theme="dark"] .empty,
+    body[data-theme="dark"] .timer-box,
+    body[data-theme="dark"] .auth-message {
+      background:rgba(27,28,32,.92);
+      border-color:var(--line);
+      color:var(--ink);
+    }
+    body[data-theme="dark"] .notice.good,
+    body[data-theme="dark"] .auth-message.good {
+      background:rgba(142,216,170,.12);
+      border-color:rgba(142,216,170,.38);
+      color:#d9ffe6;
+    }
+    body[data-theme="dark"] .notice.bad,
+    body[data-theme="dark"] .auth-message.bad,
+    body[data-theme="dark"] .dangerbox {
+      background:rgba(238,143,143,.12);
+      border-color:rgba(238,143,143,.42);
+      color:#ffe2e2;
+    }
+    body[data-theme="dark"] .badge,
+    body[data-theme="dark"] .cloud-pill {
+      background:#312d2a;
+      color:var(--ink);
+    }
+    body[data-theme="dark"] .badge.good,
+    body[data-theme="dark"] .cloud-pill.good { color:#d9ffe6; background:rgba(142,216,170,.15); }
+    body[data-theme="dark"] .badge.warn,
+    body[data-theme="dark"] .cloud-pill.warn { color:#ffe3b5; background:rgba(239,189,116,.15); }
+    body[data-theme="dark"] .badge.bad,
+    body[data-theme="dark"] .cloud-pill.bad { color:#ffdada; background:rgba(238,143,143,.15); }
+    body[data-theme="dark"] .badge.blue { color:#dff1ff; background:rgba(158,197,230,.15); }
+    body[data-theme="dark"] .progress,
+    body[data-theme="dark"] .bartrack {
+      background:#3b3632;
+    }
+    body[data-theme="dark"] .vchart {
+      border-left-color:var(--line);
+      border-bottom-color:var(--line);
+      background:linear-gradient(180deg, transparent 0 24%, rgba(255,255,255,.08) 24% 25%, transparent 25% 49%, rgba(255,255,255,.08) 49% 50%, transparent 50% 74%, rgba(255,255,255,.08) 74% 75%, transparent 75% 100%);
+    }
+
+  </style>
+</head>
+<body>
+  <header>
+    <div class="head">
+      <div>
+        <h1>学習負荷プランナー v0.5.5</h1>
+        <p class="sub">タイマー復元、ダークテーマの視認性改善、週別グラフ、更新履歴タブに対応。</p>
+      </div>
+      <div class="actions">
+        <span class="auth-status" id="cloudStatus"><span class="dot" id="cloudDot"></span><span id="cloudStatusText">未ログイン</span></span>
+        <button class="secondary" id="exportTop">バックアップ</button>
+        <label class="filebtn secondary" for="importTop">読み込み</label>
+        <input type="file" id="importTop" accept=".json,application/json">
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="card auth-card" id="authPanel">
+      <div class="auth-top">
+        <div>
+          <h2>ログイン / クラウド保存</h2>
+          <p class="small" id="authHelp">管理画面で作成済みのメール＋パスワードでログインします。ログイン中の変更はクラウドへ自動保存されます。</p>
+          <div class="cloud-line">
+            <span class="cloud-pill" id="userEmailPill">未ログイン</span>
+            <span class="cloud-pill" id="cloudLastSaved">クラウド未同期</span>
+            <span class="cloud-pill warn" id="localUnsyncedPill">未同期なし</span>
+          </div>
+          <div class="auth-message" id="authMessage">ログインするとクラウド同期が有効になります。</div>
+        </div>
+        <form class="auth-form password" id="loginForm">
+          <label>メールアドレス
+            <input id="loginEmail" type="email" autocomplete="email" placeholder="you@example.com" required>
+          </label>
+          <label>パスワード
+            <input id="loginPassword" type="password" autocomplete="current-password" placeholder="8文字以上推奨" required>
+          </label>
+          <div class="auth-buttons">
+            <button type="button" id="signInBtn">ログイン</button>
+            <button type="button" class="secondary" id="logoutBtn">ログアウト</button>
+          </div>
+        </form>
+      </div>
+      <div class="divider"></div>
+      <div class="actions">
+        <button class="secondary" id="loadCloudBtn">クラウドから読み込み</button>
+        <button class="secondary" id="saveCloudBtn">今のデータをクラウドへ保存</button>
+      </div>
+      <p class="small" style="margin-top:8px;">この画面では新規アカウント作成はできません。ユーザー追加はSupabaseのAuthentication → Users → Create new userから行ってください。</p>
+    </section>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="today">今日</button>
+      <button class="tab" data-tab="analysis">分析</button>
+      <button class="tab" data-tab="materials">教材</button>
+      <button class="tab" data-tab="record">記録</button>
+      <button class="tab" data-tab="tasks">タスク</button>
+      <button class="tab" data-tab="settings">設定</button>
+      <button class="tab" data-tab="updates">更新履歴</button>
+    </nav>
+
+    <section id="today" class="screen">
+      <div class="grid">
+        <div class="card span-3">
+          <h2>今日の予定</h2>
+          <div class="metric" id="metricToday">0分</div>
+          <div class="small" id="metricTodaySub">未完了タスクの合計</div>
+        </div>
+        <div class="card span-3">
+          <h2>今日の設定</h2>
+          <div class="metric" id="metricMode">通常</div>
+          <div class="small" id="metricCapacity">設定時間 0分</div>
+        </div>
+        <div class="card span-3">
+          <h2>持ち越し</h2>
+          <div class="metric" id="metricCarry">0件</div>
+          <div class="small">昨日以前の未完了</div>
+        </div>
+        <div class="card span-3">
+          <h2>警告</h2>
+          <div class="metric" id="metricWarnings">0件</div>
+          <div class="small">期限から逆算した不足</div>
+        </div>
+
+        <div class="card span-8">
+          <div class="item-head">
+            <h2>今日やること</h2>
+            <div class="actions">
+              <button class="secondary" id="regenPlan">今日の計画を作り直す</button>
+            </div>
+          </div>
+          <div id="todayNotice"></div>
+          <div class="divider"></div>
+          <div id="todayTasks" class="list"></div>
+        </div>
+
+        <div class="card span-4">
+          <h2>今日はどれくらいやる？</h2>
+          <form id="modeForm">
+            <label>
+              今日のモード
+              <select id="todayMode">
+                <option value="normal">通常</option>
+                <option value="light">軽め</option>
+                <option value="minimum">最低限</option>
+                <option value="rest">今日は休み</option>
+              </select>
+            </label>
+            <button type="submit">モードを保存</button>
+          </form>
+          <div class="divider"></div>
+          <div class="notice">
+            <strong>モードの意味</strong><br>
+            通常：設定時間どおり<br>
+            軽め：新規学習を約60%に圧縮<br>
+            最低限：復習優先、新規は少しだけ<br>
+            休み：新規を作らず、期限切れ復習だけ表示
+          </div>
+        </div>
+
+        <div class="card span-12">
+          <h2>期限から逆算した警告</h2>
+          <div id="warningsList" class="list"></div>
+        </div>
+      </div>
+    </section>
+
+    
+    <section id="analysis" class="screen hidden">
+      <div class="grid">
+        <div class="card span-12">
+          <h2>勉強時間の振り返り</h2>
+          <div class="statgrid" id="analysisStats"></div>
+        </div>
+        <div class="card span-7">
+          <div class="mini-select-row">
+            <h2>最近14日の日別勉強時間（教材別に切り替え可）</h2>
+            <label>表示モード
+              <select id="dailyAnalysisMode">
+                <option value="material">日ごとに教材別</option>
+                <option value="total">日ごとの合計</option>
+              </select>
+            </label>
+          </div>
+          <div id="dailyChart" class="barlist"></div>
+        </div>
+        <div class="card span-5">
+          <h2>教材別 勉強時間ランキング</h2>
+          <div id="materialRanking" class="barlist"></div>
+        </div>
+        <div class="card span-6">
+          <h2>新規学習と復習の比率</h2>
+          <div id="typeBreakdown" class="barlist"></div>
+        </div>
+        <div class="card span-6">
+          <h2>苦手フラグのある記録</h2>
+          <div id="weakRecords" class="list"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="materials" class="screen hidden">
+      <div class="grid">
+        <div class="card span-5">
+          <h2 id="materialTitle">教材を登録</h2>
+          <form id="materialForm">
+            <input type="hidden" id="materialId">
+            <label>教材名 <input id="matName" required placeholder="例：心理学検定 一問一答"></label>
+            <label>カテゴリ <input id="matCategory" placeholder="例：心理学検定 / TOEIC / 授業"></label>
+            <div class="row3">
+              <label>単位名 <input id="matUnit" placeholder="p" value="p"></label>
+              <label>期限 <input id="matDeadline" type="date" required></label>
+              <label>優先度
+                <select id="matPriority">
+                  <option value="high">高</option>
+                  <option value="normal" selected>中</option>
+                  <option value="low">低</option>
+                </select>
+              </label>
+            </div>
+            <div>
+              <label>学習する範囲</label>
+              <div id="rangeRows" class="range-rows"></div>
+              <div class="actions" style="margin-top:8px;">
+                <button type="button" class="secondary" id="addRangeBtn">範囲を追加</button>
+              </div>
+              <div class="rangehint">開始番号と終了番号だけ入れる。例：開始 1 / 終了 80。複数範囲も追加可能。</div>
+            </div>
+            <div class="row2">
+              <label>予想難易度
+                <select id="matDefaultDiff">
+                  <option value="1">1 かなり軽い</option>
+                  <option value="2">2 軽い</option>
+                  <option value="3" selected>3 普通</option>
+                  <option value="4">4 重い</option>
+                  <option value="5">5 かなり重い</option>
+                </select>
+              </label>
+              <label>1単位の初期予想（分） <input id="matBaseMin" type="number" min="1" step="1" value="6"></label>
+            </div>
+            <label>メモ <textarea id="matMemo" placeholder="例：A領域だけ、余裕があれば第5章も"></textarea></label>
+            <div class="actions">
+              <button type="submit">保存</button>
+              <button type="button" class="secondary" id="cancelMat">リセット</button>
+            </div>
+          </form>
+        </div>
+        <div class="card span-7">
+          <h2>教材リスト</h2>
+          <div id="materialList" class="list"></div>
+        </div>
+        <div class="card span-12 hidden" id="materialDetailCard">
+          <div class="item-head">
+            <h2 id="materialDetailTitle">教材詳細</h2>
+            <button class="ghost" id="closeMaterialDetail">閉じる</button>
+          </div>
+          <div id="materialDetail" class="detail-panel"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="record" class="screen hidden">
+      <div class="grid">
+        <div class="card span-5">
+          <h2 id="recordTitle">学習を記録</h2>
+          <div class="notice warn" id="recordLoginWarning" style="margin-bottom:10px;">未ログイン中の記録はクラウドへ自動保存されません。ログインしてから記録するのが安全です。</div>
+          <form id="recordForm">
+            <input type="hidden" id="recordTaskId">
+            <label>教材 <select id="recMaterial" required></select></label>
+            <div class="row3">
+              <label>種類
+                <select id="recType">
+                  <option value="new">新規学習</option>
+                  <option value="review">復習</option>
+                </select>
+              </label>
+              <label>日付 <input id="recDate" type="date" required></label>
+              <label>時間（分） <input id="recMinutes" type="number" min="1" step="1" required></label>
+            </div>
+            <div class="timer-box">
+              <div>
+                <div class="small">ストップウォッチ</div>
+                <div class="timer-display" id="timerDisplay">00:00:00</div>
+              </div>
+              <div class="timer-actions">
+                <button type="button" id="timerStart">開始</button>
+                <button type="button" class="secondary" id="timerPause">一時停止</button>
+                <button type="button" class="secondary" id="timerApply">時間欄に反映</button>
+                <button type="button" class="ghost" id="timerReset">リセット</button>
+              </div>
+              <div class="timer-status" id="timerStatus">タイマーはこの端末に一時保存されます。アプリを閉じても、次に開いた時に復元します。</div>
+              <div class="small">測った時間は「時間欄に反映」を押すと分単位で入ります。反映後、記録が終わったらリセットしてください。</div>
+            </div>
+            <div class="row2">
+              <label>範囲 開始 <input id="recStart" type="number" min="0" step="1" required></label>
+              <label>範囲 終了 <input id="recEnd" type="number" min="0" step="1" required></label>
+            </div>
+            <div class="row3">
+              <label>難易度
+                <select id="recDiff">
+                  <option value="1">1 軽い</option>
+                  <option value="2">2 やや軽い</option>
+                  <option value="3" selected>3 普通</option>
+                  <option value="4">4 重い</option>
+                  <option value="5">5 かなり重い</option>
+                </select>
+              </label>
+              <label>集中度
+                <select id="recFocus">
+                  <option value="1">1 低い</option>
+                  <option value="2">2 やや低い</option>
+                  <option value="3" selected>3 普通</option>
+                  <option value="4">4 高い</option>
+                  <option value="5">5 かなり高い</option>
+                </select>
+              </label>
+              <label>苦手フラグ
+                <select id="recWeak">
+                  <option value="ok">大丈夫</option>
+                  <option value="uncertain">やや不安</option>
+                  <option value="weak">苦手</option>
+                  <option value="redo">解き直し必要</option>
+                </select>
+              </label>
+            </div>
+            <label>メモ <textarea id="recMemo" placeholder="例：用語が曖昧、問題演習でミス多め"></textarea></label>
+            <label class="checkline"><input id="recAutoReview" type="checkbox" checked>新規学習なら固定ペースで復習タスクを作る</label>
+            <button type="submit">記録する</button>
+          </form>
+          <div class="divider"></div>
+          <div class="notice">新規学習は範囲の重複チェックをします。復習は進捗には入りません。</div>
+        </div>
+        <div class="card span-7">
+          <h2>最近の記録</h2>
+          <div id="recordList" class="list"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tasks" class="screen hidden">
+      <div class="grid">
+        <div class="card span-6">
+          <h2>未完了タスク</h2>
+          <div id="pendingTasks" class="list"></div>
+        </div>
+        <div class="card span-6">
+          <h2>完了済みタスク</h2>
+          <div id="doneTasks" class="list"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="settings" class="screen hidden">
+      <div class="grid">
+        <div class="card span-6">
+          <h2>曜日ごとの勉強できる時間</h2>
+          <form id="capacityForm">
+            <div class="row2">
+              <label>月曜（分） <input id="cap1" type="number" min="0" step="5"></label>
+              <label>火曜（分） <input id="cap2" type="number" min="0" step="5"></label>
+              <label>水曜（分） <input id="cap3" type="number" min="0" step="5"></label>
+              <label>木曜（分） <input id="cap4" type="number" min="0" step="5"></label>
+              <label>金曜（分） <input id="cap5" type="number" min="0" step="5"></label>
+              <label>土曜（分） <input id="cap6" type="number" min="0" step="5"></label>
+              <label>日曜（分） <input id="cap0" type="number" min="0" step="5"></label>
+            </div>
+            <button type="submit">保存</button>
+          </form>
+          <div class="divider"></div>
+          <h3>固定復習ペース</h3>
+          <p class="small">新規学習した範囲は、難易度に関係なく「翌日・3日後・7日後・14日後」に復習タスクが作られます。</p>
+          <div class="divider"></div>
+          <h3>日付変更時刻</h3>
+          <form id="boundaryForm">
+            <label>何時になったら翌日扱いにする？
+              <select id="dayBoundaryHour">
+                <option value="0">0:00</option>
+                <option value="1">1:00</option>
+                <option value="2">2:00</option>
+                <option value="3">3:00</option>
+                <option value="4">4:00</option>
+                <option value="5">5:00</option>
+                <option value="6">6:00</option>
+                <option value="7">7:00</option>
+                <option value="8">8:00</option>
+              </select>
+            </label>
+            <button type="submit">日付変更時刻を保存</button>
+          </form>
+          <p class="small" id="boundaryHelp" style="margin-top:8px;"></p>
+        </div>
+
+
+        <div class="card span-12">
+          <h2>クラウド同期</h2>
+          <div class="notice">
+            ログイン中は、アプリ内で保存が発生するとローカル保存に加えてクラウドにも自動保存します。通信が不安定な時のために、バックアップ書き出しは残しています。
+          </div>
+          <div class="divider"></div>
+          <div class="actions">
+            <button class="secondary" id="loadCloudBtn2">クラウドから読み込み</button>
+            <button class="secondary" id="saveCloudBtn2">今のデータをクラウドへ保存</button>
+          </div>
+          <p class="small" id="cloudDetailText" style="margin-top:8px;">未ログインです。</p>
+        </div>
+        <div class="card span-6">
+          <h2>データ管理</h2>
+          <div class="notice bad">
+            iPhoneで「データが消えない」を本気でやるなら、最終的にはクラウド保存が必要です。このHTML版はバックアップ書き出しで守る方式です。
+          </div>
+          <div class="divider"></div>
+          <div class="actions">
+            <button id="exportBtn">バックアップ書き出し</button>
+            <label class="filebtn secondary" for="importFile">バックアップ読み込み</label>
+            <input type="file" id="importFile" accept=".json,application/json">
+          </div>
+          <p class="small">ブラウザ内保存は便利ですが、Safariのデータ削除・端末故障・ストレージ整理では消える可能性があります。週1回はバックアップ推奨。</p>
+          <div class="divider"></div>
+          <div class="card dangerbox">
+            <h3>全削除</h3>
+            <p class="small">元に戻せません。バックアップ後だけ推奨。</p>
+            <button class="danger" id="resetAll">全データ削除</button>
+          </div>
+        </div>
+
+        <div class="card span-12">
+          <h2>最終的にiPhoneで安定運用するなら</h2>
+          <div class="notice">
+            この版はSupabaseログインとクラウド保存に対応しています。GitHub Pagesなどに置いたあと、SupabaseのAuthentication → URL Configurationに公開URLを登録してください。<br>
+            クラウド保存中でも、念のため定期的なバックアップ書き出しは残しておくのが安全です。
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="updates" class="screen hidden">
+      <div class="grid">
+        <div class="card span-12">
+          <h2>今回のアップデート内容</h2>
+          <div class="notice good">
+            v0.5.5では、データ保存方式は変えずに、タイマーの途中状態だけを端末内に一時保存するようにしました。更新前には念のためバックアップを書き出してください。
+          </div>
+        </div>
+        <div class="card span-12">
+          <h2>v0.5.5</h2>
+          <div class="list">
+            <div class="item"><div class="title">タイマー復元に対応</div><div class="small">開始中・一時停止中のストップウォッチを端末内に一時保存し、アプリを閉じても次回表示時に復元します。</div></div>
+            <div class="item"><div class="title">動作中のタイマーは経過時間を再計算</div><div class="small">閉じている間にJavaScriptが止まっても、開始時刻から現在時刻を引いて経過時間を表示します。</div></div>
+            <div class="item"><div class="title">記録データとは分離</div><div class="small">タイマーの途中状態はSupabaseの正式な学習記録には入れず、「時間欄に反映」または「記録する」までは下書き扱いにします。</div></div>
+          </div>
+        </div>
+        <div class="card span-6">
+          <h2>v0.5.4</h2>
+          <div class="list">
+            <div class="item"><div class="title">ダークテーマの視認性を改善</div><div class="small">文字色、入力欄、カード、ボタン、タブ、バッジ、グラフ背景のコントラストを調整しました。</div></div>
+            <div class="item"><div class="title">学習時間グラフを週別に変更</div><div class="small">これまでの「今週」表示を「週別」に変更し、日付を選ぶとその日を含む月〜日を表示できるようにしました。</div></div>
+            <div class="item"><div class="title">更新履歴タブを追加</div><div class="small">今回の変更点をアプリ内から確認できるようにしました。</div></div>
+          </div>
+        </div>
+        <div class="card span-6">
+          <h2>v0.5.3</h2>
+          <div class="list">
+            <div class="item"><div class="title">開始日〜期限の計画</div><div class="small">開始日前の教材は今日のタスクに出さず、今後の予定として表示します。</div></div>
+            <div class="item"><div class="title">分析グラフ強化</div><div class="small">月別、指定期間、総勉強時間、直近7日・30日などを追加しました。</div></div>
+            <div class="item"><div class="title">テーマ選択</div><div class="small">標準、ライト、ダーク、ピンク、ブルーを選べるようにしました。</div></div>
+            <div class="item"><div class="title">持ち越し優先の計画</div><div class="small">未完了タスクを消さず、持ち越し・復習を優先して新規タスクを作成します。</div></div>
+          </div>
+        </div>
+        <div class="card span-12">
+          <h2>データ保護メモ</h2>
+          <div class="notice">
+            このアップデートではSupabaseのテーブル構成や保存先は変更していません。タイマーの途中状態は端末内だけに一時保存し、教材・記録・タスクの既存データ構造は変更しません。
+            ただし、アップデート前と本番差し替え前には、あなたと彼氏の両方でバックアップを書き出してください。
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const SUPABASE_URL = "https://xowbuznsmhgwtjejgzsj.supabase.co";
+const SUPABASE_KEY = "sb_publishable_dwwnnDrLB0XO9F78f2lXqg_CUblib7f";
+const KEY = "study-load-planner-v05";
+const TIMER_KEY = KEY + "-stopwatch-draft";
+const OLD_KEY = "study-load-planner-v04";
+const OLD_KEY1 = "study-load-planner-v03";
+const OLD_KEY2 = "study-load-planner-v02";
+const REVIEW_OFFSETS = [1,3,7,14];
+const diffMul = {1:.75,2:.88,3:1,4:1.25,5:1.55};
+const focusMul = {1:1.22,2:1.1,3:1,4:.92,5:.85};
+const priorityMul = {high:1.25, normal:1, low:.75};
+const priorityLabel = {high:"高", normal:"中", low:"低"};
+const weakLabel = {ok:"大丈夫", uncertain:"やや不安", weak:"苦手", redo:"解き直し必要"};
+const modeLabel = {normal:"通常", light:"軽め", minimum:"最低限", rest:"休み"};
+const modeMul = {normal:1, light:.6, minimum:.3, rest:0};
+
+let state = load();
+let selectedMaterialId = null;
+let supabaseClient = null;
+let currentUser = null;
+let cloudSaveTimer = null;
+let isApplyingCloudData = false;
+let lastCloudSavedAt = null;
+let lastCloudLoadedAt = null;
+let hasLocalUnsyncedChanges = localStorage.getItem(KEY+"-unsynced") === "1";
+let lastLoggedOutSaveWarning = 0;
+
+function defaultState(){
+  return {
+    version:5.2,
+    materials:[],
+    records:[],
+    tasks:[],
+    settings:{
+      capacities:{0:120,1:45,2:60,3:45,4:30,5:90,6:120},
+      todayModes:{},
+      dayBoundaryHour:4,
+      analysisDailyMode:"material"
+    },
+    createdAt:new Date().toISOString()
+  };
+}
+
+function load(){
+  try{
+    const raw = localStorage.getItem(KEY) || localStorage.getItem(OLD_KEY) || localStorage.getItem(OLD_KEY1) || localStorage.getItem(OLD_KEY2);
+    if(!raw) return defaultState();
+    const s = JSON.parse(raw);
+    const d = defaultState();
+    return {
+      ...d,
+      ...s,
+      materials:Array.isArray(s.materials)?s.materials:[],
+      records:Array.isArray(s.records)?s.records:[],
+      tasks:Array.isArray(s.tasks)?s.tasks:[],
+      settings:{...d.settings, ...(s.settings||{}), capacities:{...d.settings.capacities, ...((s.settings||{}).capacities||{})}, todayModes:{...((s.settings||{}).todayModes||{})}, dayBoundaryHour:Number((s.settings||{}).dayBoundaryHour ?? d.settings.dayBoundaryHour), analysisDailyMode:(s.settings||{}).analysisDailyMode || d.settings.analysisDailyMode}
+    };
+  }catch(e){
+    alert("保存データの読み込みに失敗しました。");
+    return defaultState();
+  }
+}
+
+function saveLocalOnly(){
+  state.version = 5.2;
+  localStorage.setItem(KEY, JSON.stringify(state));
+}
+
+function markUnsynced(message=true){
+  if(!hasMeaningfulData(state)) return;
+  hasLocalUnsyncedChanges = true;
+  localStorage.setItem(KEY+"-unsynced", "1");
+  updateAuthUI("ログアウト中の変更があります。ログイン後に端末データをクラウドへ保存するか選べます。", "warn");
+  if(message){
+    const now = Date.now();
+    if(now - lastLoggedOutSaveWarning > 5000){
+      toast("ログアウト中：クラウド未同期の変更があります");
+      lastLoggedOutSaveWarning = now;
+    }
+  }
+}
+
+function clearUnsynced(){
+  hasLocalUnsyncedChanges = false;
+  localStorage.removeItem(KEY+"-unsynced");
+}
+
+function save(){
+  saveLocalOnly();
+  if(currentUser){
+    scheduleCloudSave();
+  } else {
+    markUnsynced(true);
+  }
+}
+
+function hasMeaningfulData(data=state){
+  return Boolean((data.materials&&data.materials.length) || (data.records&&data.records.length) || (data.tasks&&data.tasks.length));
+}
+
+function normalizeStateData(data){
+  const d = defaultState();
+  const s = data && typeof data === "object" ? data : {};
+  return {
+    ...d,
+    ...s,
+    version:5.2,
+    materials:Array.isArray(s.materials)?s.materials:[],
+    records:Array.isArray(s.records)?s.records:[],
+    tasks:Array.isArray(s.tasks)?s.tasks:[],
+    settings:{
+      ...d.settings,
+      ...(s.settings||{}),
+      capacities:{...d.settings.capacities, ...((s.settings||{}).capacities||{})},
+      todayModes:{...((s.settings||{}).todayModes||{})},
+      dayBoundaryHour:Number((s.settings||{}).dayBoundaryHour ?? d.settings.dayBoundaryHour),
+      analysisDailyMode:(s.settings||{}).analysisDailyMode || d.settings.analysisDailyMode
+    },
+    createdAt:s.createdAt || new Date().toISOString()
+  };
+}
+function id(p){ return p+"-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8); }
+function today(){
+  const d = new Date();
+  const boundary = Number(state?.settings?.dayBoundaryHour ?? 4);
+  if(d.getHours() < boundary) d.setDate(d.getDate()-1);
+  d.setMinutes(d.getMinutes()-d.getTimezoneOffset());
+  return d.toISOString().slice(0,10);
+}
+
+function actualDateTimeLabel(){
+  const d = new Date();
+  const pad=n=>String(n).padStart(2,"0");
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function dateObj(s){ const [y,m,d]=s.split("-").map(Number); return new Date(y,m-1,d); }
+function addDays(s,n){ const d=dateObj(s); d.setDate(d.getDate()+n); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10); }
+function daysInc(a,b){ if(!a||!b) return 1; const x=dateObj(a), y=dateObj(b); return Math.max(0, Math.ceil((y-x)/86400000)+1); }
+function fmtMin(m){ m=Math.max(0,Math.round(m||0)); if(m<60) return m+"分"; const h=Math.floor(m/60), mm=m%60; return mm?`${h}時間${mm}分`:`${h}時間`; }
+function esc(v){ return String(v??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;"); }
+function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),1700); }
+function mat(idv){ return state.materials.find(m=>m.id===idv); }
+function len(r){ return Math.max(0, r.end-r.start+1); }
+function rangeText(m,a,b){ return `${m?.unitLabel||"p"}.${a}〜${b}`; }
+
+function parseRanges(text){
+  const src = String(text||"").replace(/[，、]/g,",");
+  const found = [];
+  const re = /(\d+)\s*(?:-|〜|~|–|—|から|to)\s*(\d+)|(\d+)/gi;
+  let m;
+  while((m = re.exec(src))){
+    let a,b;
+    if(m[3]){ a=Number(m[3]); b=Number(m[3]); }
+    else { a=Number(m[1]); b=Number(m[2]); }
+    if(Number.isFinite(a)&&Number.isFinite(b)){
+      if(a>b) [a,b]=[b,a];
+      found.push({start:a,end:b});
+    }
+  }
+  return mergeRanges(found);
+}
+
+function mergeRanges(rs){
+  const arr = rs.filter(r=>Number.isFinite(r.start)&&Number.isFinite(r.end)).sort((a,b)=>a.start-b.start||a.end-b.end);
+  const out=[];
+  for(const r of arr){
+    const last=out[out.length-1];
+    if(!last || r.start>last.end+1) out.push({...r});
+    else last.end=Math.max(last.end,r.end);
+  }
+  return out;
+}
+
+function intersect(a,b){ const s=Math.max(a.start,b.start), e=Math.min(a.end,b.end); return s<=e?{start:s,end:e}:null; }
+
+function intersectAny(range, ranges){
+  const out=[];
+  for(const r of ranges){ const x=intersect(range,r); if(x) out.push(x); }
+  return out;
+}
+
+function subtractRanges(base, completed){
+  let remaining = base.map(r=>({...r}));
+  for(const c of completed){
+    const next=[];
+    for(const r of remaining){
+      if(c.end<r.start || c.start>r.end){ next.push(r); continue; }
+      if(c.start>r.start) next.push({start:r.start,end:c.start-1});
+      if(c.end<r.end) next.push({start:c.end+1,end:r.end});
+    }
+    remaining = next;
+  }
+  return mergeRanges(remaining);
+}
+
+function totalLen(rs){ return rs.reduce((s,r)=>s+len(r),0); }
+
+function completedRanges(materialId){
+  const m=mat(materialId); if(!m) return [];
+  const target=m.ranges||[];
+  const recs=state.records.filter(r=>r.materialId===materialId && r.type==="new");
+  const parts=[];
+  for(const r of recs){
+    const rg={start:Number(r.start),end:Number(r.end)};
+    for(const t of target){ const x=intersect(rg,t); if(x) parts.push(x); }
+  }
+  return mergeRanges(parts);
+}
+
+function remainingRanges(materialId){
+  const m=mat(materialId); if(!m) return [];
+  return subtractRanges(m.ranges||[], completedRanges(materialId));
+}
+
+function recordsFor(materialId,type){
+  return state.records.filter(r=>r.materialId===materialId && (!type || r.type===type));
+}
+
+function avg(nums){
+  const a=nums.filter(n=>Number.isFinite(n));
+  return a.length ? a.reduce((x,y)=>x+y,0)/a.length : null;
+}
+
+function estimate(m){
+  const recs = recordsFor(m.id,"new").filter(r=>r.minutes>0 && r.start!=null && r.end!=null);
+  let base = Number(m.baseMinutes||6);
+  if(recs.length){
+    const normalized = recs.map(r=>{
+      const units = Math.max(1, Number(r.end)-Number(r.start)+1);
+      return (r.minutes/units)/(diffMul[r.difficulty]||1)/(focusMul[r.focus]||1);
+    });
+    base = avg(normalized) || base;
+  }
+  const avgDiff = avg(recs.map(r=>Number(r.difficulty))) || Number(m.defaultDifficulty||3);
+  const predicted = base * (diffMul[Math.round(avgDiff)] || 1);
+  const targetTotal = totalLen(m.ranges||[]);
+  const done = totalLen(completedRanges(m.id));
+  const remaining = Math.max(0, targetTotal-done);
+  const remainingMinutes = remaining*predicted;
+  const progress = targetTotal ? done/targetTotal*100 : 0;
+  const days = daysInc(today(), m.deadline);
+  const requiredPerDay = days ? remainingMinutes/days : remainingMinutes;
+  return {base,avgDiff,predicted,targetTotal,done,remaining,remainingMinutes,progress,days,requiredPerDay};
+}
+
+function capacityForDate(dateStr){
+  const d=dateObj(dateStr).getDay();
+  return Number(state.settings.capacities[d]||0);
+}
+
+function modeForToday(){ return state.settings.todayModes[today()] || "normal"; }
+function todayCapacity(){
+  const base = capacityForDate(today());
+  const mode = modeForToday();
+  return Math.round(base * (modeMul[mode] ?? 1));
+}
+
+function capacityUntil(deadline){
+  let sum=0, d=today();
+  let guard=0;
+  while(d<=deadline && guard<800){
+    sum += capacityForDate(d);
+    d = addDays(d,1);
+    guard++;
+  }
+  return sum;
+}
+
+function taskEstimate(t){
+  const m=mat(t.materialId);
+  if(!m) return t.plannedMinutes || 0;
+  const e=estimate(m);
+  const units = Math.max(1, Number(t.end)-Number(t.start)+1);
+  const reviewFactor = t.type==="review" ? .45 : 1;
+  return Math.ceil(units * e.predicted * reviewFactor);
+}
+
+function taskScore(t){
+  const m=mat(t.materialId);
+  const due=t.dueDate;
+  const overdue = due < today() ? 1 : 0;
+  const dueToday = due <= today() ? 1 : 0;
+  const weak = t.weak==="redo" ? 4 : t.weak==="weak" ? 3 : t.weak==="uncertain" ? 2 : 0;
+  const type = t.type==="review" ? 20 : 0;
+  const pr = m ? (m.priority==="high"?6:m.priority==="normal"?3:0) : 0;
+  const days = m ? daysInc(today(), m.deadline) : 999;
+  const urgent = Math.max(0, 12-Math.min(days,12));
+  return type + overdue*60 + dueToday*25 + weak*4 + pr + urgent - (taskEstimate(t)/120);
+}
+
+function sortedTasks(tasks){
+  return tasks.slice().sort((a,b)=>taskScore(b)-taskScore(a));
+}
+
+function makeReviewTasks(record){
+  if(record.type!=="new") return;
+  const m=mat(record.materialId); if(!m) return;
+  for(const offset of REVIEW_OFFSETS){
+    const due=addDays(record.date, offset);
+    if(due > m.deadline) continue;
+    state.tasks.push({
+      id:id("task"),
+      type:"review",
+      materialId:record.materialId,
+      start:record.start,
+      end:record.end,
+      dueDate:due,
+      createdForDate:due,
+      sourceRecordId:record.id,
+      weak:record.weak,
+      plannedMinutes:null,
+      done:false,
+      createdAt:new Date().toISOString()
+    });
+  }
+}
+
+function buildTodayPlan(force=false){
+  const date=today();
+  if(force){
+    state.tasks = state.tasks.filter(t => !(t.createdForDate===date && !t.done && t.generated));
+  } else {
+    if(state.tasks.some(t=>t.createdForDate===date && t.generated)) return;
+  }
+
+  const mode=modeForToday();
+  if(mode==="rest"){
+    save(); return;
+  }
+
+  const dueUndone = state.tasks.filter(t=>!t.done && t.dueDate<=date);
+  const reviewMinutes = dueUndone.filter(t=>t.type==="review").reduce((s,t)=>s+taskEstimate(t),0);
+  let cap = todayCapacity();
+  if(mode==="minimum") cap = Math.max(0, cap - reviewMinutes);
+  else cap = Math.max(0, cap - reviewMinutes);
+
+  const materials = state.materials
+    .map(m=>({m,e:estimate(m)}))
+    .filter(x=>x.e.remaining>0)
+    .sort((a,b)=>{
+      const da = daysInc(date,a.m.deadline), db = daysInc(date,b.m.deadline);
+      const urgent = da-db;
+      if(urgent!==0) return urgent;
+      return (priorityMul[b.m.priority]||1)-(priorityMul[a.m.priority]||1);
+    });
+
+  for(const {m,e} of materials){
+    if(cap<=0) break;
+    const remain = remainingRanges(m.id);
+    if(!remain.length) continue;
+
+    const requiredUnits = Math.max(1, Math.ceil((e.remaining / Math.max(1,e.days)) * (priorityMul[m.priority]||1)));
+    const capUnits = Math.max(1, Math.floor(cap / Math.max(1,e.predicted)));
+    const units = Math.min(requiredUnits, capUnits, len(remain[0]));
+    if(units<=0) continue;
+
+    const start = remain[0].start;
+    const end = start + units - 1;
+    const minutes = Math.ceil(units * e.predicted);
+    state.tasks.push({
+      id:id("task"),
+      type:"new",
+      materialId:m.id,
+      start,
+      end,
+      dueDate:date,
+      createdForDate:date,
+      generated:true,
+      weak:"ok",
+      plannedMinutes:minutes,
+      done:false,
+      createdAt:new Date().toISOString()
+    });
+    cap -= minutes;
+  }
+  save();
+}
+
+function warnings(){
+  const out=[];
+  const ms=state.materials.map(m=>({m,e:estimate(m)})).filter(x=>x.e.remaining>0);
+  for(const {m,e} of ms){
+    const cap=capacityUntil(m.deadline);
+    if(e.remainingMinutes>cap){
+      out.push({
+        type:"material",
+        material:m,
+        shortage:e.remainingMinutes-cap,
+        message:`${m.name}：期限までの設定時間だけでは約${fmtMin(e.remainingMinutes-cap)}不足。1日あたり約${fmtMin(e.requiredPerDay)}必要。`
+      });
+    }
+  }
+  const deadlines=[...new Set(ms.map(x=>x.m.deadline))].sort();
+  for(const d of deadlines){
+    const workload = ms.filter(x=>x.m.deadline<=d).reduce((s,x)=>s+x.e.remainingMinutes,0);
+    const cap=capacityUntil(d);
+    if(workload>cap){
+      out.unshift({
+        type:"global",
+        deadline:d,
+        shortage:workload-cap,
+        message:`${d}までの合計が厳しいです。全体で約${fmtMin(workload-cap)}不足しています。`
+      });
+      break;
+    }
+  }
+  return out;
+}
+
+function render(){
+  buildTodayPlan(false);
+  renderOptions();
+  renderToday();
+  renderAnalysis();
+  renderMaterials();
+  renderRecords();
+  renderTasks();
+  renderSettings();
+  updateAuthUI();
+}
+
+function renderOptions(){
+  const sel=document.getElementById("recMaterial");
+  sel.innerHTML="";
+  if(!state.materials.length){
+    sel.disabled=true;
+    sel.innerHTML='<option value="">先に教材を登録してください</option>';
+  } else {
+    sel.disabled=false;
+    for(const m of state.materials){
+      const o=document.createElement("option"); o.value=m.id; o.textContent=m.name; sel.appendChild(o);
+    }
+  }
+}
+
+function renderToday(){
+  const date=today();
+  const due = sortedTasks(state.tasks.filter(t=>!t.done && t.dueDate<=date));
+  const total = due.reduce((s,t)=>s+taskEstimate(t),0);
+  const carry = due.filter(t=>t.dueDate<date).length;
+  const w=warnings();
+
+  document.getElementById("metricToday").textContent=fmtMin(total);
+  document.getElementById("metricTodaySub").textContent=`未完了 ${due.length}件`;
+  document.getElementById("metricMode").textContent=modeLabel[modeForToday()];
+  document.getElementById("metricCapacity").textContent=`設定時間 ${fmtMin(capacityForDate(date))} / 反映後 ${fmtMin(todayCapacity())}`;
+  document.getElementById("metricCarry").textContent=carry+"件";
+  document.getElementById("metricWarnings").textContent=w.length+"件";
+  document.getElementById("todayMode").value=modeForToday();
+
+  const notice=document.getElementById("todayNotice");
+  if(!due.length){
+    notice.innerHTML='<div class="notice good">今日の未完了タスクはありません。教材を登録するか、「今日の計画を作り直す」を押してください。</div>';
+  } else if(total>todayCapacity() && modeForToday()!=="rest"){
+    notice.innerHTML=`<div class="notice bad">今日のタスク合計が、今日の設定時間を約${fmtMin(total-todayCapacity())}超えています。軽めにするなら「最低限」へ変更して計画を作り直してください。</div>`;
+  } else {
+    notice.innerHTML='<div class="notice good">上から順番にやる想定で並べています。復習・持ち越し・期限が近いものを優先します。</div>';
+  }
+
+  const list=document.getElementById("todayTasks");
+  list.innerHTML="";
+  if(!due.length){ list.innerHTML='<div class="empty">今日やることはまだありません。</div>'; }
+  else due.forEach((t,i)=>list.appendChild(taskItem(t,i+1)));
+
+  const wl=document.getElementById("warningsList");
+  wl.innerHTML="";
+  if(!w.length) wl.innerHTML='<div class="empty">今の設定では大きな期限警告はありません。</div>';
+  else w.slice(0,10).forEach(x=>{
+    const div=document.createElement("div");
+    div.className="notice bad";
+    div.textContent=x.message;
+    wl.appendChild(div);
+  });
+}
+
+function taskItem(t,num){
+  const m=mat(t.materialId);
+  const div=document.createElement("div");
+  const overdue=t.dueDate<today();
+  const dueToday=t.dueDate<=today();
+  div.className="item";
+  div.innerHTML=`
+    <div class="taskrow">
+      <span class="tasknum">${num}</span>
+      <div style="flex:1">
+        <div class="item-head">
+          <div>
+            <div class="title">${esc(m?m.name:"削除済み教材")}</div>
+            <div class="small">${t.type==="new"?"新規学習":"復習"} / ${m?rangeText(m,t.start,t.end):`${t.start}〜${t.end}`} / 予定日 ${esc(t.dueDate)}</div>
+          </div>
+          <span class="badge ${overdue?"bad":t.type==="review"?"blue":"warn"}">${overdue?"持ち越し":t.type==="review"?"復習":"新規"}</span>
+        </div>
+        <div class="badges">
+          <span class="badge">予想 ${fmtMin(taskEstimate(t))}</span>
+          <span class="badge">${weakLabel[t.weak||"ok"]}</span>
+          ${m?`<span class="badge">期限 ${esc(m.deadline)}</span><span class="badge">優先度 ${priorityLabel[m.priority]}</span>`:""}
+        </div>
+        <div class="actions">
+          <button data-fill="${t.id}">記録して完了</button>
+          <button class="secondary" data-quick="${t.id}">そのまま完了</button>
+          <button class="ghost" data-delete="${t.id}">削除</button>
+        </div>
+      </div>
+    </div>`;
+  div.querySelector("[data-fill]").onclick=()=>fillRecordFromTask(t.id);
+  div.querySelector("[data-quick]").onclick=()=>quickDone(t.id);
+  div.querySelector("[data-delete]").onclick=()=>deleteTask(t.id);
+  return div;
+}
+
+function materialItem(m){
+  const e=estimate(m);
+  const div=document.createElement("div");
+  div.className="item";
+  const rem=remainingRanges(m.id);
+  const next=rem[0];
+  div.innerHTML=`
+    <div class="item-head">
+      <div>
+        <div class="title">${esc(m.name)}</div>
+        <div class="small">${esc(m.category||"カテゴリなし")} / 範囲 ${esc(rangesToText(m.ranges,m.unitLabel))}</div>
+      </div>
+      <span class="badge ${e.remaining? "warn":"good"}">${e.remaining? "進行中":"完了"}</span>
+    </div>
+    <div class="progress"><div class="bar" style="width:${Math.min(100,Math.max(0,e.progress))}%"></div></div>
+    <div class="badges">
+      <span class="badge">進捗 ${Math.round(e.progress)}%</span>
+      <span class="badge">完了 ${e.done}/${e.targetTotal}${esc(m.unitLabel)}</span>
+      <span class="badge">残り ${e.remaining}${esc(m.unitLabel)}</span>
+      <span class="badge">残り約 ${fmtMin(e.remainingMinutes)}</span>
+      <span class="badge">1${esc(m.unitLabel)} 約${e.predicted.toFixed(1)}分</span>
+    </div>
+    <div class="twocol">
+      <div>期限：${esc(m.deadline)}（あと${e.days}日）</div>
+      <div>1日あたり必要：約${fmtMin(e.requiredPerDay)}</div>
+      <div>次の未完了：${next?rangeText(m,next.start,next.end):"なし"}</div>
+      <div>優先度：${priorityLabel[m.priority]} / 平均難易度：${e.avgDiff.toFixed(1)}</div>
+    </div>
+    ${m.memo?`<div class="small" style="margin-top:8px;">メモ：${esc(m.memo)}</div>`:""}
+    <div class="actions" style="margin-top:10px">
+      <button data-detail="${m.id}">詳細</button>
+      <button class="secondary" data-edit="${m.id}">編集</button>
+      <button class="ghost" data-del="${m.id}">削除</button>
+    </div>`;
+  div.querySelector("[data-detail]").onclick=()=>showMaterialDetail(m.id);
+  div.querySelector("[data-edit]").onclick=()=>editMat(m.id);
+  div.querySelector("[data-del]").onclick=()=>deleteMat(m.id);
+  return div;
+}
+
+function rangesToText(rs,unit){
+  if(!rs||!rs.length) return "";
+  return rs.map(r=>`${unit||"p"}.${r.start}〜${r.end}`).join(", ");
+}
+
+function addRangeRow(start="", end=""){
+  const wrap=document.getElementById("rangeRows");
+  if(!wrap) return;
+  const row=document.createElement("div");
+  row.className="range-row";
+  row.innerHTML=`
+    <label>開始番号 <input class="range-start" type="number" min="0" step="1" value="${esc(start)}" placeholder="1"></label>
+    <label>終了番号 <input class="range-end" type="number" min="0" step="1" value="${esc(end)}" placeholder="80"></label>
+    <button type="button" class="ghost range-remove">削除</button>`;
+  row.querySelector(".range-remove").onclick=()=>{
+    if(document.querySelectorAll("#rangeRows .range-row").length<=1){
+      row.querySelector(".range-start").value="";
+      row.querySelector(".range-end").value="";
+    } else row.remove();
+  };
+  wrap.appendChild(row);
+}
+
+function setRangeRows(ranges){
+  const wrap=document.getElementById("rangeRows");
+  if(!wrap) return;
+  wrap.innerHTML="";
+  const rs=(ranges&&ranges.length)?ranges:[{start:"",end:""}];
+  rs.forEach(r=>addRangeRow(r.start??"", r.end??""));
+}
+
+function collectRangeRows(){
+  const rows=[...document.querySelectorAll("#rangeRows .range-row")];
+  const ranges=[];
+  for(const row of rows){
+    let start=Number(row.querySelector(".range-start").value);
+    let end=Number(row.querySelector(".range-end").value);
+    if(!Number.isFinite(start)||!Number.isFinite(end)||row.querySelector(".range-start").value===""||row.querySelector(".range-end").value==="") continue;
+    if(start>end) [start,end]=[end,start];
+    ranges.push({start,end});
+  }
+  return mergeRanges(ranges);
+}
+
+function lastNDays(n){
+  const arr=[];
+  for(let i=n-1;i>=0;i--) arr.push(addDays(today(),-i));
+  return arr;
+}
+
+function recordsInLastDays(n){
+  const from=addDays(today(),-(n-1));
+  return state.records.filter(r=>r.date>=from && r.date<=today());
+}
+
+function materialNameFor(idv){
+  const m=mat(idv);
+  return m ? m.name : "削除済み教材";
+}
+
+function renderDailyByMaterial(el, days){
+  el.innerHTML="";
+  const rows = days.map(d=>{
+    const records = state.records.filter(r=>r.date===d);
+    const total = records.reduce((s,r)=>s+Number(r.minutes||0),0);
+    const byMat = {};
+    for(const r of records){
+      const key = r.materialId || "unknown";
+      if(!byMat[key]) byMat[key] = {name:materialNameFor(key), minutes:0};
+      byMat[key].minutes += Number(r.minutes||0);
+    }
+    return {date:d, total, materials:Object.values(byMat).sort((a,b)=>b.minutes-a.minutes)};
+  });
+  if(!rows.some(r=>r.total>0)){
+    el.innerHTML='<div class="empty">まだ記録がありません。</div>';
+    return;
+  }
+  const max = Math.max(...rows.map(r=>r.total),1);
+  rows.forEach(r=>{
+    const card=document.createElement("div");
+    card.className="day-card";
+    const materialRows = r.materials.length ? r.materials.map(x=>`
+      <div class="material-mini-row">
+        <div>${esc(x.name)}</div>
+        <div class="bartrack"><div class="barfill" style="width:${Math.round(x.minutes/Math.max(r.total,1)*100)}%"></div></div>
+        <div class="right">${fmtMin(x.minutes)}</div>
+      </div>`).join("") : '<div class="small">記録なし</div>';
+    card.innerHTML=`
+      <div class="day-card-head">
+        <strong>${esc(r.date.slice(5))}</strong>
+        <span class="badge ${r.total?"blue":""}">${fmtMin(r.total)}</span>
+      </div>
+      <div class="bartrack" style="margin-bottom:9px;"><div class="barfill" style="width:${Math.round(r.total/max*100)}%"></div></div>
+      <div class="material-mini-list">${materialRows}</div>`;
+    el.appendChild(card);
+  });
+}
+
+function renderBarList(el, rows, emptyText){
+  el.innerHTML="";
+  if(!rows.length){ el.innerHTML=`<div class="empty">${emptyText}</div>`; return; }
+  const max=Math.max(...rows.map(r=>r.value),1);
+  rows.forEach(r=>{
+    const div=document.createElement("div");
+    div.className="barrow";
+    div.innerHTML=`<div>${esc(r.label)}</div><div class="bartrack"><div class="barfill" style="width:${Math.round(r.value/max*100)}%"></div></div><div class="right">${esc(r.text)}</div>`;
+    el.appendChild(div);
+  });
+}
+
+function renderAnalysis(){
+  const stats=document.getElementById("analysisStats");
+  if(!stats) return;
+  const r7=recordsInLastDays(7);
+  const r30=recordsInLastDays(30);
+  const min7=r7.reduce((s,r)=>s+Number(r.minutes||0),0);
+  const min30=r30.reduce((s,r)=>s+Number(r.minutes||0),0);
+  const active7=new Set(r7.map(r=>r.date)).size;
+  const active30=new Set(r30.map(r=>r.date)).size;
+  const avgDiff=avg(r30.map(r=>Number(r.difficulty)))||0;
+  const weakCount=r30.filter(r=>r.weak&&r.weak!=="ok").length;
+  stats.innerHTML=`
+    <div class="statbox"><div class="small">直近7日</div><div class="num">${fmtMin(min7)}</div></div>
+    <div class="statbox"><div class="small">直近30日</div><div class="num">${fmtMin(min30)}</div></div>
+    <div class="statbox"><div class="small">7日の勉強日数</div><div class="num">${active7}/7日</div></div>
+    <div class="statbox"><div class="small">30日の平均難易度</div><div class="num">${avgDiff?avgDiff.toFixed(1):"-"}</div></div>
+    <div class="statbox"><div class="small">30日の平均/勉強日</div><div class="num">${fmtMin(active30?min30/active30:0)}</div></div>
+    <div class="statbox"><div class="small">新規学習</div><div class="num">${fmtMin(r30.filter(r=>r.type==="new").reduce((s,r)=>s+Number(r.minutes||0),0))}</div></div>
+    <div class="statbox"><div class="small">復習</div><div class="num">${fmtMin(r30.filter(r=>r.type==="review").reduce((s,r)=>s+Number(r.minutes||0),0))}</div></div>
+    <div class="statbox"><div class="small">苦手系記録</div><div class="num">${weakCount}件</div></div>`;
+
+  const dailyMode = state.settings.analysisDailyMode || "material";
+  const dailyModeEl = document.getElementById("dailyAnalysisMode");
+  if(dailyModeEl) dailyModeEl.value = dailyMode;
+  const days14 = lastNDays(14);
+  if(dailyMode === "material"){
+    renderDailyByMaterial(document.getElementById("dailyChart"), days14);
+  } else {
+    const byDay=days14.map(d=>{
+      const m=state.records.filter(r=>r.date===d).reduce((s,r)=>s+Number(r.minutes||0),0);
+      return {label:d.slice(5), value:m, text:fmtMin(m)};
+    });
+    renderBarList(document.getElementById("dailyChart"), byDay, "まだ記録がありません。");
+  }
+
+  const matRows=state.materials.map(m=>{
+    const v=r30.filter(r=>r.materialId===m.id).reduce((s,r)=>s+Number(r.minutes||0),0);
+    return {label:m.name, value:v, text:fmtMin(v)};
+  }).filter(x=>x.value>0).sort((a,b)=>b.value-a.value).slice(0,8);
+  renderBarList(document.getElementById("materialRanking"), matRows, "直近30日の教材別記録はまだありません。");
+
+  const typeRows=[
+    {label:"新規", value:r30.filter(r=>r.type==="new").reduce((s,r)=>s+Number(r.minutes||0),0), text:fmtMin(r30.filter(r=>r.type==="new").reduce((s,r)=>s+Number(r.minutes||0),0))},
+    {label:"復習", value:r30.filter(r=>r.type==="review").reduce((s,r)=>s+Number(r.minutes||0),0), text:fmtMin(r30.filter(r=>r.type==="review").reduce((s,r)=>s+Number(r.minutes||0),0))}
+  ].filter(x=>x.value>0);
+  renderBarList(document.getElementById("typeBreakdown"), typeRows, "まだ比率を出せる記録がありません。");
+
+  const weak=document.getElementById("weakRecords");
+  weak.innerHTML="";
+  const wr=state.records.filter(r=>r.weak&&r.weak!=="ok").sort((a,b)=>b.date.localeCompare(a.date)).slice(0,12);
+  if(!wr.length) weak.innerHTML='<div class="empty">苦手フラグのある記録はまだありません。</div>';
+  else wr.forEach(r=>weak.appendChild(recordItem(r)));
+}
+
+function showMaterialDetail(mid){
+  selectedMaterialId=mid;
+  renderMaterialDetail();
+  document.getElementById("materialDetailCard")?.classList.remove("hidden");
+  document.getElementById("materialDetailCard")?.scrollIntoView({behavior:"smooth", block:"start"});
+}
+
+function renderMaterialDetail(){
+  const card=document.getElementById("materialDetailCard");
+  const box=document.getElementById("materialDetail");
+  const title=document.getElementById("materialDetailTitle");
+  if(!card||!box||!title) return;
+  const m=mat(selectedMaterialId);
+  if(!m){ card.classList.add("hidden"); box.innerHTML=""; return; }
+  card.classList.remove("hidden");
+  const e=estimate(m);
+  const done=completedRanges(m.id);
+  const rem=remainingRanges(m.id);
+  const recs=recordsFor(m.id).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,8);
+  const pending=state.tasks.filter(t=>t.materialId===m.id&&!t.done).sort((a,b)=>a.dueDate.localeCompare(b.dueDate)).slice(0,8);
+  title.textContent=`教材詳細：${m.name}`;
+  box.innerHTML=`
+    <div class="statgrid">
+      <div class="statbox"><div class="small">進捗</div><div class="num">${Math.round(e.progress)}%</div></div>
+      <div class="statbox"><div class="small">完了範囲</div><div class="num">${e.done}/${e.targetTotal}${esc(m.unitLabel)}</div></div>
+      <div class="statbox"><div class="small">残り時間</div><div class="num">${fmtMin(e.remainingMinutes)}</div></div>
+      <div class="statbox"><div class="small">1${esc(m.unitLabel)}予測</div><div class="num">${e.predicted.toFixed(1)}分</div></div>
+    </div>
+    <div class="progress"><div class="bar" style="width:${Math.min(100,Math.max(0,e.progress))}%"></div></div>
+    <div class="grid" style="margin-top:12px;">
+      <div class="span-6">
+        <h3>範囲</h3>
+        <div class="small"><strong>対象：</strong>${esc(rangesToText(m.ranges,m.unitLabel)||"なし")}</div>
+        <div class="small"><strong>完了：</strong>${esc(rangesToText(done,m.unitLabel)||"なし")}</div>
+        <div class="small"><strong>未完了：</strong>${esc(rangesToText(rem,m.unitLabel)||"なし")}</div>
+      </div>
+      <div class="span-6">
+        <h3>予定</h3>
+        <div class="small">期限：${esc(m.deadline)} / あと${e.days}日</div>
+        <div class="small">1日あたり必要：約${fmtMin(e.requiredPerDay)}</div>
+        <div class="small">優先度：${priorityLabel[m.priority]} / 平均難易度：${e.avgDiff.toFixed(1)}</div>
+      </div>
+      <div class="span-6">
+        <h3>最近の記録</h3>
+        <div id="detailRecords" class="list"></div>
+      </div>
+      <div class="span-6">
+        <h3>未完了タスク</h3>
+        <div id="detailTasks" class="list"></div>
+      </div>
+    </div>`;
+  const dr=box.querySelector("#detailRecords");
+  if(!recs.length) dr.innerHTML='<div class="empty">この教材の記録はまだありません。</div>';
+  else recs.forEach(r=>dr.appendChild(recordItem(r)));
+  const dt=box.querySelector("#detailTasks");
+  if(!pending.length) dt.innerHTML='<div class="empty">この教材の未完了タスクはありません。</div>';
+  else pending.forEach((t,i)=>dt.appendChild(taskItem(t,i+1)));
+}
+
+
+function renderMaterials(){
+  const list=document.getElementById("materialList");
+  list.innerHTML="";
+  if(!state.materials.length){ list.innerHTML='<div class="empty">まだ教材がありません。左から登録してください。</div>'; return; }
+  state.materials
+    .slice()
+    .sort((a,b)=>dateObj(a.deadline)-dateObj(b.deadline))
+    .forEach(m=>list.appendChild(materialItem(m)));
+  renderMaterialDetail();
+}
+
+function recordItem(r){
+  const m=mat(r.materialId);
+  const div=document.createElement("div");
+  div.className="item";
+  div.innerHTML=`
+    <div class="item-head">
+      <div>
+        <div class="title">${esc(m?m.name:"削除済み教材")}</div>
+        <div class="small">${esc(r.date)} / ${r.type==="new"?"新規":"復習"} / ${m?rangeText(m,r.start,r.end):`${r.start}〜${r.end}`}</div>
+      </div>
+      <span class="badge ${r.weak==="weak"||r.weak==="redo"?"bad":r.weak==="uncertain"?"warn":"good"}">${weakLabel[r.weak||"ok"]}</span>
+    </div>
+    <div class="badges">
+      <span class="badge">${fmtMin(r.minutes)}</span>
+      <span class="badge">難易度 ${r.difficulty}</span>
+      <span class="badge">集中度 ${r.focus}</span>
+    </div>
+    ${r.memo?`<div class="small">メモ：${esc(r.memo)}</div>`:""}
+    <div class="actions" style="margin-top:8px"><button class="ghost" data-delrec="${r.id}">削除</button></div>`;
+  div.querySelector("[data-delrec]").onclick=()=>deleteRecord(r.id);
+  return div;
+}
+
+function renderRecords(){
+  const list=document.getElementById("recordList");
+  list.innerHTML="";
+  if(!state.records.length){ list.innerHTML='<div class="empty">まだ記録がありません。</div>'; return; }
+  state.records.slice().sort((a,b)=>(b.date+b.createdAt).localeCompare(a.date+a.createdAt)).slice(0,50).forEach(r=>list.appendChild(recordItem(r)));
+}
+
+function renderTasks(){
+  const p=document.getElementById("pendingTasks"), d=document.getElementById("doneTasks");
+  p.innerHTML=""; d.innerHTML="";
+  const pending=sortedTasks(state.tasks.filter(t=>!t.done));
+  const done=state.tasks.filter(t=>t.done).sort((a,b)=>(b.doneAt||"").localeCompare(a.doneAt||"")).slice(0,50);
+  if(!pending.length) p.innerHTML='<div class="empty">未完了タスクはありません。</div>';
+  else pending.forEach((t,i)=>p.appendChild(taskItem(t,i+1)));
+  if(!done.length) d.innerHTML='<div class="empty">完了済みタスクはまだありません。</div>';
+  else done.forEach((t,i)=>{
+    const item=taskItem(t,i+1);
+    item.querySelectorAll("button").forEach(b=>b.remove());
+    const actions=document.createElement("div");
+    actions.className="actions"; actions.style.marginTop="8px";
+    const undo=document.createElement("button"); undo.className="secondary"; undo.textContent="未完了に戻す"; undo.onclick=()=>undoTask(t.id);
+    actions.appendChild(undo); item.appendChild(actions);
+    d.appendChild(item);
+  });
+}
+
+function renderSettings(){
+  for(let i=0;i<7;i++) document.getElementById("cap"+i).value=state.settings.capacities[i]??0;
+  const boundaryEl = document.getElementById("dayBoundaryHour");
+  if(boundaryEl) boundaryEl.value = String(state.settings.dayBoundaryHour ?? 4);
+  const help = document.getElementById("boundaryHelp");
+  if(help) help.textContent = `現在時刻：${actualDateTimeLabel()} / アプリ上の今日：${today()}。${state.settings.dayBoundaryHour ?? 4}:00より前の記録・タスクは前日扱いになります。`;
+}
+
+function fillRecordFromTask(taskId){
+  const t=state.tasks.find(x=>x.id===taskId); if(!t) return;
+  const m=mat(t.materialId); if(!m) return;
+  switchTab("record");
+  document.getElementById("recordTitle").textContent="タスクを記録して完了";
+  document.getElementById("recordTaskId").value=t.id;
+  document.getElementById("recMaterial").value=t.materialId;
+  document.getElementById("recType").value=t.type;
+  document.getElementById("recDate").value=today();
+  document.getElementById("recStart").value=t.start;
+  document.getElementById("recEnd").value=t.end;
+  document.getElementById("recMinutes").value=taskEstimate(t);
+  document.getElementById("recDiff").value=m.defaultDifficulty||3;
+  document.getElementById("recFocus").value=3;
+  document.getElementById("recWeak").value=t.weak||"ok";
+  document.getElementById("recMemo").value="";
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+
+function quickDone(taskId){
+  const t=state.tasks.find(x=>x.id===taskId); if(!t) return;
+  const m=mat(t.materialId); if(!m) return;
+  const record={
+    id:id("rec"), materialId:t.materialId, type:t.type, date:today(),
+    start:t.start, end:t.end, minutes:taskEstimate(t),
+    difficulty:Number(m.defaultDifficulty||3), focus:3, weak:t.weak||"ok",
+    memo:"タスクからそのまま完了", taskId:t.id, createdAt:new Date().toISOString()
+  };
+  if(t.type==="new"){
+    const overlap = intersectAny({start:record.start,end:record.end}, completedRanges(record.materialId));
+    if(overlap.length && !confirm("この範囲はすでに一部記録済みです。それでも完了にしますか？")) return;
+  }
+  state.records.push(record);
+  if(record.type==="new") makeReviewTasks(record);
+  t.done=true; t.doneAt=new Date().toISOString();
+  save(); render(); toast("完了にしました");
+}
+
+function deleteTask(taskId){
+  if(!confirm("このタスクを削除しますか？")) return;
+  state.tasks=state.tasks.filter(t=>t.id!==taskId);
+  save(); render(); toast("タスクを削除しました");
+}
+function undoTask(taskId){
+  const t=state.tasks.find(x=>x.id===taskId); if(!t) return;
+  t.done=false; delete t.doneAt; save(); render(); toast("未完了に戻しました");
+}
+
+function editMat(mid){
+  const m=mat(mid); if(!m) return;
+  document.getElementById("materialTitle").textContent="教材を編集";
+  document.getElementById("materialId").value=m.id;
+  document.getElementById("matName").value=m.name;
+  document.getElementById("matCategory").value=m.category||"";
+  document.getElementById("matUnit").value=m.unitLabel||"p";
+  document.getElementById("matDeadline").value=m.deadline;
+  document.getElementById("matPriority").value=m.priority||"normal";
+  setRangeRows(m.ranges&&m.ranges.length?m.ranges:[{start:"",end:""}]);
+  document.getElementById("matDefaultDiff").value=m.defaultDifficulty||3;
+  document.getElementById("matBaseMin").value=m.baseMinutes||6;
+  document.getElementById("matMemo").value=m.memo||"";
+  switchTab("materials");
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+
+function resetMatForm(){
+  document.getElementById("materialTitle").textContent="教材を登録";
+  document.getElementById("materialForm").reset();
+  document.getElementById("materialId").value="";
+  setRangeRows([{start:"",end:""}]);
+  document.getElementById("matUnit").value="p";
+  document.getElementById("matPriority").value="normal";
+  document.getElementById("matDefaultDiff").value=3;
+  document.getElementById("matBaseMin").value=6;
+}
+
+function deleteMat(mid){
+  const m=mat(mid); if(!m) return;
+  if(!confirm(`「${m.name}」を削除します。関連する記録とタスクも削除されます。`)) return;
+  if(selectedMaterialId===mid) selectedMaterialId=null;
+  state.materials=state.materials.filter(x=>x.id!==mid);
+  state.records=state.records.filter(x=>x.materialId!==mid);
+  state.tasks=state.tasks.filter(x=>x.materialId!==mid);
+  save(); render(); toast("教材を削除しました");
+}
+
+function deleteRecord(rid){
+  if(!confirm("記録を削除します。関連する復習タスクも削除します。")) return;
+  state.records=state.records.filter(r=>r.id!==rid);
+  state.tasks=state.tasks.filter(t=>t.sourceRecordId!==rid && t.recordId!==rid);
+  save(); render(); toast("記録を削除しました");
+}
+
+function switchTab(tab){
+  document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.tab===tab));
+  document.querySelectorAll(".screen").forEach(x=>x.classList.toggle("hidden",x.id!==tab));
+}
+
+function exportData(){
+  const blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url; a.download=`study-load-planner-v054-backup-${today()}.json`;
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  toast("バックアップを書き出しました");
+}
+
+function importData(file){
+  if(!file) return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const imported=JSON.parse(reader.result);
+      if(!Array.isArray(imported.materials)||!Array.isArray(imported.records)) throw new Error("invalid");
+      if(!confirm("現在のデータをバックアップ内容で置き換えます。よろしいですか？")) return;
+      state=normalizeStateData(imported);
+      save(); render(); toast("読み込みました");
+    }catch(e){ alert("読み込みに失敗しました。v0.2/v0.3/v0.4のJSONバックアップか確認してください。"); }
+  };
+  reader.readAsText(file);
+}
+
+
+async function initCloud(){
+  if(!window.supabase || !window.supabase.createClient){
+    updateAuthUI("Supabaseライブラリを読み込めませんでした。ネット接続を確認してください。");
+    return;
+  }
+  try{
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+      auth: { persistSession:true, autoRefreshToken:true, detectSessionInUrl:true }
+    });
+    const { data, error } = await supabaseClient.auth.getSession();
+    if(error) throw error;
+    currentUser = data?.session?.user || null;
+    updateAuthUI();
+    if(currentUser){
+      await autoLoadOrCreateCloudData();
+    }
+    supabaseClient.auth.onAuthStateChange(async (event, session)=>{
+      currentUser = session?.user || null;
+      updateAuthUI();
+      if(event === "SIGNED_IN" && currentUser){
+        toast("ログインしました");
+        await autoLoadOrCreateCloudData();
+      }
+      if(event === "SIGNED_OUT"){
+        toast("ログアウトしました");
+        updateAuthUI();
+      }
+    });
+  }catch(e){
+    console.error(e);
+    updateAuthUI("クラウド初期化エラー："+(e.message||e));
+  }
+}
+
+function setAuthMessage(message, kind=""){
+  const box = document.getElementById("authMessage");
+  if(!box) return;
+  box.classList.remove("good","warn","bad");
+  if(kind) box.classList.add(kind);
+  box.textContent = message || "";
+}
+
+function updateAuthUI(message, kind=""){
+  const email = currentUser?.email || "";
+  const loggedIn = Boolean(currentUser);
+  const statusText = document.getElementById("cloudStatusText");
+  const dot = document.getElementById("cloudDot");
+  const pill = document.getElementById("userEmailPill");
+  const last = document.getElementById("cloudLastSaved");
+  const unsyncedPill = document.getElementById("localUnsyncedPill");
+  const detail = document.getElementById("cloudDetailText");
+  const logout = document.getElementById("logoutBtn");
+  const loadBtn = document.getElementById("loadCloudBtn");
+  const saveBtn = document.getElementById("saveCloudBtn");
+  const loadBtn2 = document.getElementById("loadCloudBtn2");
+  const saveBtn2 = document.getElementById("saveCloudBtn2");
+  const recordWarning = document.getElementById("recordLoginWarning");
+  if(statusText) statusText.textContent = loggedIn ? "ログイン中・同期ON" : "未ログイン";
+  if(dot) dot.classList.toggle("good", loggedIn);
+  if(pill){
+    pill.textContent = loggedIn ? `ログイン中：${email}` : "未ログイン";
+    pill.classList.toggle("good", loggedIn);
+  }
+  if(last){
+    last.textContent = lastCloudSavedAt ? `最終保存 ${lastCloudSavedAt}` : (lastCloudLoadedAt ? `最終読込 ${lastCloudLoadedAt}` : "クラウド未同期");
+    last.classList.toggle("good", Boolean(lastCloudSavedAt || lastCloudLoadedAt));
+  }
+  if(unsyncedPill){
+    unsyncedPill.textContent = hasLocalUnsyncedChanges ? "端末に未同期あり" : "未同期なし";
+    unsyncedPill.classList.toggle("warn", hasLocalUnsyncedChanges);
+    unsyncedPill.classList.toggle("good", !hasLocalUnsyncedChanges && loggedIn);
+  }
+  const defaultMessage = loggedIn
+    ? `ログイン完了：${email}。変更はクラウドへ自動保存されます。`
+    : "未ログインです。ログイン中だけクラウド保存されます。ログアウト中の記録は端末内に残りますが、ログイン時に扱いを選ぶ必要があります。";
+  if(detail) detail.textContent = message || defaultMessage;
+  setAuthMessage(message || defaultMessage, kind || (loggedIn ? "good" : (hasLocalUnsyncedChanges ? "warn" : "")));
+  if(recordWarning) recordWarning.classList.toggle("hidden", loggedIn);
+  [logout, loadBtn, saveBtn, loadBtn2, saveBtn2].forEach(btn=>{ if(btn) btn.disabled = !loggedIn; });
+}
+
+function getAuthInput(){
+  const email = String(document.getElementById("loginEmail")?.value || "").trim();
+  const password = String(document.getElementById("loginPassword")?.value || "");
+  if(!email) throw new Error("メールアドレスを入れてください");
+  if(!password) throw new Error("パスワードを入れてください");
+  if(password.length < 6) throw new Error("パスワードは最低6文字以上にしてください");
+  return { email, password };
+}
+
+async function signInWithPassword(){
+  if(!supabaseClient) throw new Error("Supabaseが初期化されていません");
+  const { email, password } = getAuthInput();
+  const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  if(error) throw error;
+}
+
+async function signUpWithPassword(){
+  if(!supabaseClient) throw new Error("Supabaseが初期化されていません");
+  const { email, password } = getAuthInput();
+  const redirectTo = window.location.href.split("#")[0].split("?")[0];
+  const { data, error } = await supabaseClient.auth.signUp({
+    email,
+    password,
+    options: { emailRedirectTo: redirectTo }
+  });
+  if(error) throw error;
+  return data;
+}
+
+async function logout(){
+  if(!supabaseClient) return;
+  const { error } = await supabaseClient.auth.signOut();
+  if(error) throw error;
+  currentUser = null;
+  updateAuthUI();
+}
+
+function scheduleCloudSave(){
+  if(isApplyingCloudData || !currentUser || !supabaseClient) return;
+  clearTimeout(cloudSaveTimer);
+  cloudSaveTimer = setTimeout(()=>saveCloudData(false), 900);
+}
+
+async function fetchCloudRow(){
+  const { data, error } = await supabaseClient
+    .from("study_planner_data")
+    .select("data, updated_at")
+    .eq("user_id", currentUser.id)
+    .maybeSingle();
+  if(error) throw error;
+  return data;
+}
+
+async function autoLoadOrCreateCloudData(){
+  if(!currentUser || !supabaseClient) return;
+  try{
+    updateAuthUI("ログインしました。クラウドデータを確認中...", "good");
+    const row = await fetchCloudRow();
+    if(row && row.data && hasMeaningfulData(row.data)){
+      if(hasLocalUnsyncedChanges && hasMeaningfulData(state)){
+        const useLocal = confirm("この端末にログアウト中の未同期データがあります。\n\nOK：この端末のデータをクラウドへ保存する\nキャンセル：クラウドのデータを読み込む");
+        if(useLocal){
+          await saveCloudData(true);
+          clearUnsynced();
+          updateAuthUI("端末データをクラウドへ保存しました。", "good");
+          return;
+        }
+      }
+      localStorage.setItem(KEY+"-before-cloud-load", JSON.stringify(state));
+      isApplyingCloudData = true;
+      state = normalizeStateData(row.data);
+      state._cloudUpdatedAt = row.updated_at;
+      lastCloudLoadedAt = new Date().toLocaleString("ja-JP", {hour12:false});
+      clearUnsynced();
+      saveLocalOnly();
+      isApplyingCloudData = false;
+      render();
+      updateAuthUI("クラウドから読み込みました。同期準備完了です。", "good");
+      toast("クラウドから読み込みました");
+    } else {
+      await saveCloudData(true);
+      clearUnsynced();
+      updateAuthUI("クラウドに初期保存しました。同期準備完了です。", "good");
+      toast("ローカルデータをクラウドに初期保存しました");
+    }
+  }catch(e){
+    console.error(e);
+    updateAuthUI("クラウド読込エラー："+(e.message||e), "bad");
+    toast("クラウド読込に失敗しました");
+  }
+}
+
+async function loadCloudDataManual(){
+  if(!currentUser) { alert("先にログインしてください。"); return; }
+  if(hasMeaningfulData(state) && !confirm("クラウドの内容でこの端末の表示を置き換えます。現在のローカルデータは退避されます。よろしいですか？")) return;
+  try{
+    const row = await fetchCloudRow();
+    if(!row || !row.data){ alert("クラウドに保存データがありません。先に保存してください。"); return; }
+    localStorage.setItem(KEY+"-before-manual-cloud-load", JSON.stringify(state));
+    isApplyingCloudData = true;
+    state = normalizeStateData(row.data);
+    state._cloudUpdatedAt = row.updated_at;
+    lastCloudLoadedAt = new Date().toLocaleString("ja-JP", {hour12:false});
+    clearUnsynced();
+    saveLocalOnly();
+    isApplyingCloudData = false;
+    render();
+    toast("クラウドから読み込みました");
+  }catch(e){
+    console.error(e);
+    alert("クラウド読み込みに失敗しました："+(e.message||e));
+  }
+}
+
+async function saveCloudData(showToast=true){
+  if(!currentUser || !supabaseClient) { if(showToast) alert("先にログインしてください。"); return; }
+  try{
+    const payload = normalizeStateData({...state, _cloudUpdatedAt: undefined});
+    const { data, error } = await supabaseClient
+      .from("study_planner_data")
+      .upsert({ user_id: currentUser.id, data: payload }, { onConflict: "user_id" })
+      .select("updated_at")
+      .single();
+    if(error) throw error;
+    lastCloudSavedAt = new Date().toLocaleString("ja-JP", {hour12:false});
+    if(data?.updated_at) state._cloudUpdatedAt = data.updated_at;
+    clearUnsynced();
+    saveLocalOnly();
+    updateAuthUI("クラウド保存完了：" + lastCloudSavedAt, "good");
+    if(showToast) toast("クラウドに保存しました");
+  }catch(e){
+    console.error(e);
+    updateAuthUI("クラウド保存エラー："+(e.message||e), "bad");
+    if(showToast) alert("クラウド保存に失敗しました："+(e.message||e));
+  }
+}
+
+
+let stopwatchElapsedMs = 0;
+let stopwatchStartedAt = null;
+let stopwatchTimer = null;
+
+function currentStopwatchMs(){
+  return stopwatchElapsedMs + (stopwatchStartedAt ? Date.now() - stopwatchStartedAt : 0);
+}
+
+function formatStopwatch(ms){
+  const total = Math.floor(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return [h,m,s].map(x=>String(x).padStart(2,"0")).join(":");
+}
+
+function timerDraftPayload(){
+  return {
+    elapsedMs: Math.max(0, Math.round(stopwatchElapsedMs || 0)),
+    startedAt: stopwatchStartedAt || null,
+    running: Boolean(stopwatchStartedAt),
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function saveStopwatchDraft(){
+  try{
+    if(currentStopwatchMs() <= 0 && !stopwatchStartedAt){
+      localStorage.removeItem(TIMER_KEY);
+      return;
+    }
+    localStorage.setItem(TIMER_KEY, JSON.stringify(timerDraftPayload()));
+  }catch(e){
+    console.warn("タイマー下書きの保存に失敗しました", e);
+  }
+}
+
+function clearStopwatchDraft(){
+  try{ localStorage.removeItem(TIMER_KEY); }catch(e){}
+}
+
+function restoreStopwatchDraft(){
+  try{
+    const raw = localStorage.getItem(TIMER_KEY);
+    if(!raw) return;
+    const saved = JSON.parse(raw);
+    stopwatchElapsedMs = Math.max(0, Number(saved.elapsedMs) || 0);
+    const startedAt = Number(saved.startedAt) || 0;
+    stopwatchStartedAt = saved.running && startedAt ? startedAt : null;
+    if(stopwatchStartedAt){
+      clearInterval(stopwatchTimer);
+      stopwatchTimer = setInterval(renderStopwatch, 500);
+    }
+  }catch(e){
+    console.warn("タイマー下書きの復元に失敗しました", e);
+    stopwatchElapsedMs = 0;
+    stopwatchStartedAt = null;
+    clearStopwatchDraft();
+  }
+}
+
+function updateStopwatchStatus(){
+  const status = document.getElementById("timerStatus");
+  if(!status) return;
+  const ms = currentStopwatchMs();
+  if(stopwatchStartedAt){
+    status.textContent = "計測中です。アプリを閉じても、次に開いた時に開始時刻から経過時間を再計算します。";
+  }else if(ms > 0){
+    status.textContent = "一時停止中または未反映の時間があります。この端末に一時保存中です。";
+  }else{
+    status.textContent = "タイマーはこの端末に一時保存されます。アプリを閉じても、次に開いた時に復元します。";
+  }
+}
+
+function renderStopwatch(){
+  const el = document.getElementById("timerDisplay");
+  if(el) el.textContent = formatStopwatch(currentStopwatchMs());
+  updateStopwatchStatus();
+}
+
+function startStopwatch(){
+  if(stopwatchStartedAt) return;
+  stopwatchStartedAt = Date.now();
+  clearInterval(stopwatchTimer);
+  stopwatchTimer = setInterval(renderStopwatch, 500);
+  saveStopwatchDraft();
+  renderStopwatch();
+}
+
+function pauseStopwatch(){
+  if(!stopwatchStartedAt) return;
+  stopwatchElapsedMs += Date.now() - stopwatchStartedAt;
+  stopwatchStartedAt = null;
+  clearInterval(stopwatchTimer);
+  stopwatchTimer = null;
+  saveStopwatchDraft();
+  renderStopwatch();
+}
+
+function resetStopwatch(){
+  stopwatchElapsedMs = 0;
+  stopwatchStartedAt = null;
+  clearInterval(stopwatchTimer);
+  stopwatchTimer = null;
+  clearStopwatchDraft();
+  renderStopwatch();
+}
+
+function applyStopwatchToMinutes(){
+  const ms = currentStopwatchMs();
+  if(ms <= 0){ alert("まだ時間が測られていません。"); return; }
+  const seconds = Math.round(ms / 1000);
+  const minutes = Math.max(1, Math.ceil(seconds / 60));
+  const input = document.getElementById("recMinutes");
+  if(input) input.value = minutes;
+  saveStopwatchDraft();
+  toast(`${minutes}分を時間欄に反映しました`);
+}
+
+window.addEventListener("beforeunload", saveStopwatchDraft);
+window.addEventListener("pagehide", saveStopwatchDraft);
+window.addEventListener("visibilitychange", () => {
+  if(!document.hidden) renderStopwatch();
+});
+
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>switchTab(t.dataset.tab));
+const dailyAnalysisModeEl = document.getElementById("dailyAnalysisMode");
+if(dailyAnalysisModeEl){
+  dailyAnalysisModeEl.onchange = e => {
+    state.settings.analysisDailyMode = e.target.value;
+    save();
+    renderAnalysis();
+  };
+}
+document.getElementById("recDate").value=today();
+
+document.getElementById("materialForm").onsubmit=e=>{
+  e.preventDefault();
+  const ranges=collectRangeRows();
+  if(!ranges.length){ alert("範囲の開始番号と終了番号を入れてください。"); return; }
+  const mid=document.getElementById("materialId").value || id("mat");
+  const obj={
+    id:mid,
+    name:document.getElementById("matName").value.trim(),
+    category:document.getElementById("matCategory").value.trim(),
+    unitLabel:document.getElementById("matUnit").value.trim()||"p",
+    deadline:document.getElementById("matDeadline").value,
+    priority:document.getElementById("matPriority").value,
+    ranges,
+    defaultDifficulty:Number(document.getElementById("matDefaultDiff").value),
+    baseMinutes:Number(document.getElementById("matBaseMin").value||6),
+    memo:document.getElementById("matMemo").value.trim(),
+    updatedAt:new Date().toISOString()
+  };
+  if(!obj.name){ alert("教材名を入れてください。"); return; }
+  const idx=state.materials.findIndex(m=>m.id===mid);
+  if(idx>=0) state.materials[idx]={...state.materials[idx],...obj};
+  else state.materials.push({...obj,createdAt:new Date().toISOString()});
+  save(); resetMatForm(); render(); toast(idx>=0?"教材を更新しました":"教材を登録しました");
+};
+
+document.getElementById("cancelMat").onclick=resetMatForm;
+document.getElementById("addRangeBtn").onclick=()=>addRangeRow();
+document.getElementById("closeMaterialDetail").onclick=()=>{ selectedMaterialId=null; document.getElementById("materialDetailCard").classList.add("hidden"); };
+setRangeRows([{start:"",end:""}]);
+
+document.getElementById("recordForm").onsubmit=e=>{
+  e.preventDefault();
+  const taskId=document.getElementById("recordTaskId").value;
+  const record={
+    id:id("rec"),
+    materialId:document.getElementById("recMaterial").value,
+    type:document.getElementById("recType").value,
+    date:document.getElementById("recDate").value||today(),
+    start:Number(document.getElementById("recStart").value),
+    end:Number(document.getElementById("recEnd").value),
+    minutes:Number(document.getElementById("recMinutes").value),
+    difficulty:Number(document.getElementById("recDiff").value),
+    focus:Number(document.getElementById("recFocus").value),
+    weak:document.getElementById("recWeak").value,
+    memo:document.getElementById("recMemo").value.trim(),
+    taskId:taskId||null,
+    createdAt:new Date().toISOString()
+  };
+  if(!mat(record.materialId)){ alert("教材を選んでください。"); return; }
+  if(record.start>record.end) [record.start,record.end]=[record.end,record.start];
+  if(record.minutes<=0){ alert("時間を入れてください。"); return; }
+
+  const m=mat(record.materialId);
+  const inTarget = intersectAny({start:record.start,end:record.end}, m.ranges||[]);
+  if(!inTarget.length && !confirm("この範囲は教材の対象範囲外です。それでも記録しますか？")) return;
+
+  if(record.type==="new"){
+    const overlap = intersectAny({start:record.start,end:record.end}, completedRanges(record.materialId));
+    if(overlap.length){
+      const txt=overlap.map(r=>rangeText(m,r.start,r.end)).join(", ");
+      if(!confirm(`すでに記録済みの範囲と重なっています：${txt}\nそれでも記録しますか？`)) return;
+    }
+  }
+
+  state.records.push(record);
+  if(record.type==="new" && document.getElementById("recAutoReview").checked) makeReviewTasks(record);
+  if(taskId){
+    const t=state.tasks.find(x=>x.id===taskId);
+    if(t){ t.done=true; t.doneAt=new Date().toISOString(); t.recordId=record.id; }
+  }
+  save();
+  document.getElementById("recordForm").reset();
+  document.getElementById("recordTitle").textContent="学習を記録";
+  document.getElementById("recordTaskId").value="";
+  document.getElementById("recDate").value=today();
+  document.getElementById("recDiff").value=3;
+  document.getElementById("recFocus").value=3;
+  document.getElementById("recWeak").value="ok";
+  document.getElementById("recAutoReview").checked=true;
+  resetStopwatch();
+  render(); toast("記録しました");
+};
+
+document.getElementById("modeForm").onsubmit=e=>{
+  e.preventDefault();
+  state.settings.todayModes[today()]=document.getElementById("todayMode").value;
+  save(); buildTodayPlan(true); render(); toast("今日のモードを保存しました");
+};
+
+document.getElementById("regenPlan").onclick=()=>{
+  if(!confirm("今日作成済みの未完了・自動生成タスクを作り直します。持ち越しや復習タスクは残ります。")) return;
+  buildTodayPlan(true); render(); toast("今日の計画を作り直しました");
+};
+
+document.getElementById("capacityForm").onsubmit=e=>{
+  e.preventDefault();
+  for(let i=0;i<7;i++) state.settings.capacities[i]=Number(document.getElementById("cap"+i).value||0);
+  save(); buildTodayPlan(true); render(); toast("曜日別時間を保存しました");
+};
+
+document.getElementById("boundaryForm").onsubmit=e=>{
+  e.preventDefault();
+  state.settings.dayBoundaryHour = Number(document.getElementById("dayBoundaryHour").value);
+  document.getElementById("recDate").value = today();
+  save(); buildTodayPlan(true); render(); toast("日付変更時刻を保存しました");
+};
+
+document.getElementById("exportBtn").onclick=exportData;
+document.getElementById("exportTop").onclick=exportData;
+document.getElementById("importFile").onchange=e=>importData(e.target.files[0]);
+document.getElementById("importTop").onchange=e=>importData(e.target.files[0]);
+
+document.getElementById("resetAll").onclick=()=>{
+  if(!confirm("全データを削除します。バックアップは取りましたか？")) return;
+  if(!confirm("本当に削除しますか？元に戻せません。")) return;
+  state=defaultState(); save(); render(); toast("全データを削除しました");
+};
+
+const loginForm = document.getElementById("loginForm");
+if(loginForm){
+  loginForm.onsubmit = e => e.preventDefault();
+}
+const signInBtn = document.getElementById("signInBtn");
+if(signInBtn) signInBtn.onclick = async () => {
+  try{
+    signInBtn.disabled = true;
+    signInBtn.textContent = "ログイン中...";
+    updateAuthUI("ログイン処理中です...", "warn");
+    await signInWithPassword();
+    toast("ログインしました");
+    updateAuthUI("ログインしました。クラウドデータを確認しています...", "good");
+  }catch(err){
+    updateAuthUI("ログイン失敗："+(err.message||err), "bad");
+    alert("ログインに失敗しました："+(err.message||err));
+  } finally {
+    signInBtn.disabled = false;
+    signInBtn.textContent = "ログイン";
+  }
+};
+const logoutBtn = document.getElementById("logoutBtn");
+if(logoutBtn) logoutBtn.onclick = async ()=>{ try{ await logout(); }catch(e){ alert("ログアウトに失敗しました："+(e.message||e)); } };
+["timerStart","timerPause","timerReset","timerApply"].forEach(id=>{
+  const el = document.getElementById(id);
+  if(!el) return;
+  if(id==="timerStart") el.onclick = startStopwatch;
+  if(id==="timerPause") el.onclick = pauseStopwatch;
+  if(id==="timerReset") el.onclick = resetStopwatch;
+  if(id==="timerApply") el.onclick = applyStopwatchToMinutes;
+});
+restoreStopwatchDraft();
+renderStopwatch();
+["loadCloudBtn","loadCloudBtn2"].forEach(x=>{ const b=document.getElementById(x); if(b) b.onclick=()=>loadCloudDataManual(); });
+["saveCloudBtn","saveCloudBtn2"].forEach(x=>{ const b=document.getElementById(x); if(b) b.onclick=()=>saveCloudData(true); });
+
+render();
+initCloud();
+</script>
+
+<script>
+/* v0.5.5 patch: start dates, safer carryover, week analysis graphs, themes, update log, timer restore */
+(function(){
+  const VERSION_055 = 5.5;
+
+  function ensurePatchDom(){
+    const analysis = document.getElementById("analysis");
+    if(analysis && !document.getElementById("analysisPeriodMode")){
+      analysis.innerHTML = `
+        <div class="grid">
+          <div class="card span-12">
+            <h2>勉強時間の振り返り</h2>
+            <div class="statgrid" id="analysisStats"></div>
+          </div>
+          <div class="card span-12">
+            <div class="analysis-toolbar">
+              <div>
+                <h2>学習時間グラフ</h2>
+                <p class="small">縦軸は勉強時間、横軸は期間です。</p>
+              </div>
+              <div class="segmented" id="analysisPeriodMode">
+                <button type="button" data-mode="week" class="active">週別</button>
+                <button type="button" data-mode="month">月別</button>
+                <button type="button" data-mode="custom">指定期間</button>
+              </div>
+            </div>
+            <div class="period-controls" id="analysisControls">
+              <label id="analysisWeekLabel">週を選択
+                <input id="analysisWeekDate" type="date">
+                <span class="rangehint">選んだ日を含む月〜日を表示します。</span>
+              </label>
+              <label id="analysisYearLabel">年
+                <input id="analysisYear" type="number" min="2000" max="2100" step="1">
+              </label>
+              <label id="analysisStartLabel" class="hidden">開始日
+                <input id="analysisStart" type="date">
+              </label>
+              <label id="analysisEndLabel" class="hidden">終了日
+                <input id="analysisEnd" type="date">
+              </label>
+              <button type="button" class="secondary" id="applyAnalysisPeriod">表示を更新</button>
+            </div>
+            <div id="analysisPeriodSummary" class="badges" style="margin-top:10px;"></div>
+            <div id="studyTimeChart" class="vchart-wrap" style="margin-top:10px;"></div>
+          </div>
+          <div class="card span-5">
+            <h2>教材別 勉強時間ランキング</h2>
+            <div id="materialRanking" class="barlist"></div>
+          </div>
+          <div class="card span-3">
+            <h2>新規/復習</h2>
+            <div id="typeBreakdown" class="barlist"></div>
+          </div>
+          <div class="card span-4">
+            <h2>苦手フラグのある記録</h2>
+            <div id="weakRecords" class="list"></div>
+          </div>
+        </div>`;
+    }
+
+    const deadlineEl = document.getElementById("matDeadline");
+    if(deadlineEl && !document.getElementById("matStartDate")){
+      const label = deadlineEl.closest("label");
+      if(label){
+        label.insertAdjacentHTML("beforebegin", `<label>開始日 <input id="matStartDate" type="date"><span class="rangehint">未入力なら、計算上は今日から開始として扱います。</span></label>`);
+      }
+    }
+
+    const todayGrid = document.querySelector("#today .grid");
+    if(todayGrid && !document.getElementById("futurePlansCard")){
+      const warningsCard = document.getElementById("warningsList")?.closest(".card");
+      const html = `<div class="card span-12" id="futurePlansCard"><h2>今後の予定</h2><div id="futurePlans" class="future-list"></div></div>`;
+      if(warningsCard) warningsCard.insertAdjacentHTML("beforebegin", html); else todayGrid.insertAdjacentHTML("beforeend", html);
+    }
+
+    const settingsGrid = document.querySelector("#settings .grid");
+    if(settingsGrid && !document.getElementById("themeForm")){
+      settingsGrid.insertAdjacentHTML("afterbegin", `
+        <div class="card span-6">
+          <h2>テーマ</h2>
+          <form id="themeForm">
+            <label>表示テーマ
+              <select id="themeSelect">
+                <option value="standard">標準（ブラウン）</option>
+                <option value="light">ライト</option>
+                <option value="dark">ダーク</option>
+                <option value="pink">ピンク</option>
+                <option value="blue">ブルー</option>
+              </select>
+            </label>
+            <div class="theme-preview"><span class="theme-dot"></span><span class="small">テーマはこの端末とクラウドに保存されます。</span></div>
+            <button type="submit">テーマを保存</button>
+          </form>
+        </div>`);
+    }
+
+    const capacityTitle = document.querySelector("#capacityForm")?.closest(".card")?.querySelector("h2");
+    if(capacityTitle) capacityTitle.textContent = "曜日ごとの勉強時間上限";
+
+    const dataCard = [...document.querySelectorAll("#settings .card")].find(c => c.querySelector("h2")?.textContent.trim()==="データ管理");
+    if(dataCard){
+      const notice = dataCard.querySelector(".notice");
+      if(notice){
+        notice.classList.remove("bad");
+        notice.innerHTML = `データを守るため、重要な更新前や定期的なタイミングでバックアップを書き出すことをおすすめします。<br>クラウド保存を利用している場合でも、通信エラー・操作ミス・アップデート時の不具合に備えて、バックアップを残しておくと安心です。`;
+      }
+      const p = dataCard.querySelector("p.small");
+      if(p) p.textContent = "バックアップファイルは、iCloud Driveなど自分が確認しやすい場所に保存してください。";
+    }
+
+    const iphoneCard = [...document.querySelectorAll("#settings .card")].find(c => c.querySelector("h2")?.textContent.trim()==="最終的にiPhoneで安定運用するなら");
+    if(iphoneCard){
+      iphoneCard.querySelector("h2").textContent = "データを守るために";
+      const n = iphoneCard.querySelector(".notice");
+      if(n) n.innerHTML = `クラウド保存中でも、アップデート前・大きな編集前・復元テスト前にはバックアップを書き出すと安全です。<br>GitHubのHTMLを更新しても通常はクラウド上のデータは消えませんが、万一の上書きや操作ミスに備えてバックアップを残してください。`;
+    }
+  }
+
+  function themeValue(){ return state?.settings?.theme || "standard"; }
+  function applyTheme(){ document.body.setAttribute("data-theme", themeValue()); }
+
+  function ensureSettingsDefaults(){
+    if(!state.settings) state.settings = {};
+    if(!state.settings.capacities) state.settings.capacities = {0:120,1:45,2:60,3:45,4:30,5:90,6:120};
+    if(!state.settings.todayModes) state.settings.todayModes = {};
+    if(state.settings.dayBoundaryHour == null) state.settings.dayBoundaryHour = 4;
+    if(!state.settings.theme) state.settings.theme = "standard";
+    if(!state.settings.analysisMode) state.settings.analysisMode = "week";
+    if(!state.settings.analysisWeekDate) state.settings.analysisWeekDate = today();
+    if(!state.settings.analysisYear) state.settings.analysisYear = Number(today().slice(0,4));
+    if(!state.settings.analysisStart) state.settings.analysisStart = addDays(today(), -6);
+    if(!state.settings.analysisEnd) state.settings.analysisEnd = today();
+  }
+
+  defaultState = function(){
+    return {
+      version:VERSION_055,
+      materials:[], records:[], tasks:[],
+      settings:{
+        capacities:{0:120,1:45,2:60,3:45,4:30,5:90,6:120},
+        todayModes:{}, dayBoundaryHour:4,
+        analysisDailyMode:"material", analysisMode:"week", analysisWeekDate:today(), analysisYear:Number(today().slice(0,4)), analysisStart:addDays(today(),-6), analysisEnd:today(),
+        theme:"standard"
+      },
+      createdAt:new Date().toISOString()
+    };
+  };
+
+  normalizeStateData = function(data){
+    const d = defaultState();
+    const s = data && typeof data === "object" ? data : {};
+    return {
+      ...d, ...s, version:VERSION_055,
+      materials:Array.isArray(s.materials)?s.materials:[],
+      records:Array.isArray(s.records)?s.records:[],
+      tasks:Array.isArray(s.tasks)?s.tasks:[],
+      settings:{
+        ...d.settings, ...(s.settings||{}),
+        capacities:{...d.settings.capacities, ...((s.settings||{}).capacities||{})},
+        todayModes:{...((s.settings||{}).todayModes||{})},
+        dayBoundaryHour:Number((s.settings||{}).dayBoundaryHour ?? d.settings.dayBoundaryHour),
+        analysisDailyMode:(s.settings||{}).analysisDailyMode || d.settings.analysisDailyMode,
+        analysisMode:(s.settings||{}).analysisMode || d.settings.analysisMode,
+        analysisWeekDate:(s.settings||{}).analysisWeekDate || d.settings.analysisWeekDate,
+        analysisYear:Number((s.settings||{}).analysisYear || d.settings.analysisYear),
+        analysisStart:(s.settings||{}).analysisStart || d.settings.analysisStart,
+        analysisEnd:(s.settings||{}).analysisEnd || d.settings.analysisEnd,
+        theme:(s.settings||{}).theme || d.settings.theme
+      },
+      createdAt:s.createdAt || new Date().toISOString()
+    };
+  };
+
+  saveLocalOnly = function(){
+    state.version = VERSION_055;
+    ensureSettingsDefaults();
+    localStorage.setItem(KEY, JSON.stringify(state));
+  };
+
+  function startDateForCalc(m, ref=today()){
+    if(m?.startDate && m.startDate > ref) return m.startDate;
+    return ref;
+  }
+  function displayStartDate(m){ return m?.startDate || "未設定（今日扱い）"; }
+  function isFutureMaterial(m, ref=today()){ return Boolean(m?.startDate && m.startDate > ref); }
+  function isStartedMaterial(m, ref=today()){ return !isFutureMaterial(m, ref); }
+  function capacityBetween(start, end){
+    let sum=0, d=start, guard=0;
+    while(d<=end && guard<900){ sum += capacityForDate(d); d = addDays(d,1); guard++; }
+    return sum;
+  }
+
+  estimate = function(m){
+    const recs = recordsFor(m.id,"new").filter(r=>r.minutes>0 && r.start!=null && r.end!=null);
+    let base = Number(m.baseMinutes||6);
+    if(recs.length){
+      const normalized = recs.map(r=>{
+        const units = Math.max(1, Number(r.end)-Number(r.start)+1);
+        return (r.minutes/units)/(diffMul[r.difficulty]||1)/(focusMul[r.focus]||1);
+      });
+      base = avg(normalized) || base;
+    }
+    const avgDiff = avg(recs.map(r=>Number(r.difficulty))) || Number(m.defaultDifficulty||3);
+    const predicted = base * (diffMul[Math.round(avgDiff)] || 1);
+    const targetTotal = totalLen(m.ranges||[]);
+    const done = totalLen(completedRanges(m.id));
+    const remaining = Math.max(0, targetTotal-done);
+    const remainingMinutes = remaining*predicted;
+    const progress = targetTotal ? done/targetTotal*100 : 0;
+    const start = startDateForCalc(m, today());
+    const daysRaw = daysInc(start, m.deadline);
+    const days = Math.max(1, daysRaw || 0);
+    const requiredPerDay = remainingMinutes/days;
+    return {base,avgDiff,predicted,targetTotal,done,remaining,remainingMinutes,progress,days:daysRaw,planDays:days,requiredPerDay,planStart:start};
+  };
+
+  capacityUntil = function(deadline){ return capacityBetween(today(), deadline); };
+
+  buildTodayPlan = function(force=false){
+    const date=today();
+    if(force){
+      state.tasks = state.tasks.filter(t => !(t.createdForDate===date && !t.done && t.generated));
+    } else {
+      if(state.tasks.some(t=>t.createdForDate===date && t.generated)) return;
+    }
+    const mode=modeForToday();
+    if(mode==="rest"){ save(); return; }
+    const dueUndone = state.tasks.filter(t=>!t.done && t.dueDate<=date);
+    const existingMinutes = dueUndone.reduce((s,t)=>s+taskEstimate(t),0);
+    let cap = Math.max(0, todayCapacity() - existingMinutes);
+
+    const materials = state.materials
+      .filter(m=>isStartedMaterial(m,date))
+      .map(m=>({m,e:estimate(m)}))
+      .filter(x=>x.e.remaining>0)
+      .sort((a,b)=>{
+        const da = daysInc(date,a.m.deadline), db = daysInc(date,b.m.deadline);
+        const urgent = da-db;
+        if(urgent!==0) return urgent;
+        return (priorityMul[b.m.priority]||1)-(priorityMul[a.m.priority]||1);
+      });
+    for(const {m,e} of materials){
+      if(cap<=0) break;
+      const remain = remainingRanges(m.id);
+      if(!remain.length) continue;
+      const requiredUnits = Math.max(1, Math.ceil((e.remaining / Math.max(1,e.planDays)) * (priorityMul[m.priority]||1)));
+      const capUnits = Math.max(1, Math.floor(cap / Math.max(1,e.predicted)));
+      const units = Math.min(requiredUnits, capUnits, len(remain[0]));
+      if(units<=0) continue;
+      const start = remain[0].start;
+      const end = start + units - 1;
+      const minutes = Math.ceil(units * e.predicted);
+      state.tasks.push({id:id("task"),type:"new",materialId:m.id,start,end,dueDate:date,createdForDate:date,generated:true,weak:"ok",plannedMinutes:minutes,done:false,createdAt:new Date().toISOString()});
+      cap -= minutes;
+    }
+    save();
+  };
+
+  warnings = function(){
+    const out=[];
+    const ms=state.materials.map(m=>({m,e:estimate(m)})).filter(x=>x.e.remaining>0);
+    for(const {m,e} of ms){
+      const cap = capacityBetween(e.planStart, m.deadline);
+      if(e.remainingMinutes>cap){
+        const startLabel = m.startDate && m.startDate>today() ? `${m.startDate}開始で` : "今の設定では";
+        out.push({type:"material",material:m,shortage:e.remainingMinutes-cap,message:`${m.name}：${startLabel}期限までに約${fmtMin(e.remainingMinutes-cap)}不足。1日あたり約${fmtMin(e.requiredPerDay)}必要。`});
+      }
+    }
+    return out;
+  };
+
+  function periodRecords(mode){
+    const recs = state.records || [];
+    if(mode==="week"){
+      const selected = state.settings.analysisWeekDate || today();
+      const base = dateObj(selected);
+      const day = base.getDay();
+      const diff = (day + 6) % 7;
+      base.setDate(base.getDate() - diff);
+      base.setMinutes(base.getMinutes()-base.getTimezoneOffset());
+      const start = base.toISOString().slice(0,10);
+      const days = Array.from({length:7},(_,i)=>addDays(start,i));
+      const labels = ["月","火","水","木","金","土","日"];
+      const rows = days.map((d,i)=>({key:d,label:`${labels[i]} ${d.slice(5).replace("-","/")}`,minutes:recs.filter(r=>r.date===d).reduce((s,r)=>s+Number(r.minutes||0),0)}));
+      return {rows, records:recs.filter(r=>days.includes(r.date)), title:`週別 ${start.replaceAll("-","/")}〜${days[6].replaceAll("-","/")}`, start, end:days[6]};
+    }
+    if(mode==="month"){
+      const y = Number(state.settings.analysisYear || today().slice(0,4));
+      const rows = Array.from({length:12},(_,i)=>{
+        const mm = String(i+1).padStart(2,"0");
+        const minutes = recs.filter(r=>String(r.date||"").startsWith(`${y}-${mm}`)).reduce((s,r)=>s+Number(r.minutes||0),0);
+        return {key:`${y}-${mm}`, label:`${i+1}月`, minutes};
+      });
+      return {rows, records:recs.filter(r=>String(r.date||"").startsWith(`${y}-`)), title:`${y}年 月別`, start:`${y}-01-01`, end:`${y}-12-31`};
+    }
+    const start = state.settings.analysisStart || addDays(today(),-6);
+    const end = state.settings.analysisEnd || today();
+    const days=[];
+    let d=start, guard=0;
+    while(d<=end && guard<370){ days.push(d); d=addDays(d,1); guard++; }
+    const rows = days.map(d=>({key:d,label:d.slice(5).replace("-","/"),minutes:recs.filter(r=>r.date===d).reduce((s,r)=>s+Number(r.minutes||0),0)}));
+    return {rows, records:recs.filter(r=>r.date>=start && r.date<=end), title:`指定期間`, start, end};
+  }
+
+  function renderVerticalChart(el, rows, emptyText){
+    if(!el) return;
+    const max = Math.max(1, ...rows.map(r=>r.minutes||0));
+    if(!rows.some(r=>r.minutes>0)){
+      el.innerHTML = `<div class="empty">${emptyText}</div>`;
+      return;
+    }
+    el.innerHTML = `<div class="vchart-axis-label">縦軸：勉強時間 / 横軸：曜日・月・日付</div><div class="vchart"></div>`;
+    const chart = el.querySelector(".vchart");
+    rows.forEach(r=>{
+      const h = Math.max(3, Math.round((r.minutes||0)/max*190));
+      const col=document.createElement("div");
+      col.className="vbar-col";
+      col.innerHTML = `<div class="vbar-value">${r.minutes?fmtMin(r.minutes):""}</div><div class="vbar" style="height:${h}px"></div><div class="vbar-label">${esc(r.label)}</div>`;
+      chart.appendChild(col);
+    });
+  }
+
+  renderAnalysis = function(){
+    const stats=document.getElementById("analysisStats");
+    if(!stats) return;
+    ensureSettingsDefaults();
+    const all = state.records || [];
+    const r7=recordsInLastDays(7);
+    const r30=recordsInLastDays(30);
+    const minTotal=all.reduce((s,r)=>s+Number(r.minutes||0),0);
+    const min7=r7.reduce((s,r)=>s+Number(r.minutes||0),0);
+    const min30=r30.reduce((s,r)=>s+Number(r.minutes||0),0);
+    const todayMin=all.filter(r=>r.date===today()).reduce((s,r)=>s+Number(r.minutes||0),0);
+    const active7=new Set(r7.map(r=>r.date)).size;
+    const avgDiff=avg(r30.map(r=>Number(r.difficulty)))||0;
+    stats.innerHTML=`
+      <div class="statbox"><div class="small">総勉強時間（累計）</div><div class="num">${fmtMin(minTotal)}</div></div>
+      <div class="statbox"><div class="small">今日</div><div class="num">${fmtMin(todayMin)}</div></div>
+      <div class="statbox"><div class="small">直近7日</div><div class="num">${fmtMin(min7)}</div></div>
+      <div class="statbox"><div class="small">直近30日</div><div class="num">${fmtMin(min30)}</div></div>
+      <div class="statbox"><div class="small">7日の勉強日数</div><div class="num">${active7}/7日</div></div>
+      <div class="statbox"><div class="small">30日の平均難易度</div><div class="num">${avgDiff?avgDiff.toFixed(1):"-"}</div></div>
+      <div class="statbox"><div class="small">新規学習（30日）</div><div class="num">${fmtMin(r30.filter(r=>r.type==="new").reduce((s,r)=>s+Number(r.minutes||0),0))}</div></div>
+      <div class="statbox"><div class="small">復習（30日）</div><div class="num">${fmtMin(r30.filter(r=>r.type==="review").reduce((s,r)=>s+Number(r.minutes||0),0))}</div></div>`;
+
+    const mode = state.settings.analysisMode || "week";
+    document.querySelectorAll("#analysisPeriodMode button").forEach(b=>b.classList.toggle("active", b.dataset.mode===mode));
+    const weekLabel=document.getElementById("analysisWeekLabel");
+    const yearLabel=document.getElementById("analysisYearLabel");
+    const startLabel=document.getElementById("analysisStartLabel");
+    const endLabel=document.getElementById("analysisEndLabel");
+    if(weekLabel) weekLabel.classList.toggle("hidden", mode!=="week");
+    if(yearLabel) yearLabel.classList.toggle("hidden", mode!=="month");
+    if(startLabel) startLabel.classList.toggle("hidden", mode!=="custom");
+    if(endLabel) endLabel.classList.toggle("hidden", mode!=="custom");
+    const weekEl=document.getElementById("analysisWeekDate"); if(weekEl) weekEl.value=state.settings.analysisWeekDate || today();
+    const yearEl=document.getElementById("analysisYear"); if(yearEl) yearEl.value=state.settings.analysisYear || Number(today().slice(0,4));
+    const startEl=document.getElementById("analysisStart"); if(startEl) startEl.value=state.settings.analysisStart || addDays(today(),-6);
+    const endEl=document.getElementById("analysisEnd"); if(endEl) endEl.value=state.settings.analysisEnd || today();
+
+    const pr = periodRecords(mode);
+    renderVerticalChart(document.getElementById("studyTimeChart"), pr.rows, "この期間の記録はまだありません。");
+    const periodMin = pr.records.reduce((s,r)=>s+Number(r.minutes||0),0);
+    const daysWith = new Set(pr.records.map(r=>r.date)).size;
+    const topMat = state.materials.map(m=>({name:m.name, minutes:pr.records.filter(r=>r.materialId===m.id).reduce((s,r)=>s+Number(r.minutes||0),0)})).sort((a,b)=>b.minutes-a.minutes)[0];
+    const sumEl=document.getElementById("analysisPeriodSummary");
+    if(sumEl) sumEl.innerHTML = `<span class="badge blue">${esc(pr.title)}</span><span class="badge">期間合計 ${fmtMin(periodMin)}</span><span class="badge">勉強日数 ${daysWith}日</span>${topMat&&topMat.minutes?`<span class="badge">最多 ${esc(topMat.name)} ${fmtMin(topMat.minutes)}</span>`:""}`;
+
+    const matRows=state.materials.map(m=>({label:m.name,value:pr.records.filter(r=>r.materialId===m.id).reduce((s,r)=>s+Number(r.minutes||0),0),text:fmtMin(pr.records.filter(r=>r.materialId===m.id).reduce((s,r)=>s+Number(r.minutes||0),0))})).filter(x=>x.value>0).sort((a,b)=>b.value-a.value).slice(0,8);
+    renderBarList(document.getElementById("materialRanking"), matRows, "この期間の教材別記録はまだありません。");
+    const typeRows=[
+      {label:"新規", value:pr.records.filter(r=>r.type==="new").reduce((s,r)=>s+Number(r.minutes||0),0), text:fmtMin(pr.records.filter(r=>r.type==="new").reduce((s,r)=>s+Number(r.minutes||0),0))},
+      {label:"復習", value:pr.records.filter(r=>r.type==="review").reduce((s,r)=>s+Number(r.minutes||0),0), text:fmtMin(pr.records.filter(r=>r.type==="review").reduce((s,r)=>s+Number(r.minutes||0),0))}
+    ].filter(x=>x.value>0);
+    renderBarList(document.getElementById("typeBreakdown"), typeRows, "この期間にはまだ記録がありません。");
+    const weak=document.getElementById("weakRecords");
+    if(weak){
+      weak.innerHTML="";
+      const wr=pr.records.filter(r=>r.weak&&r.weak!=="ok").sort((a,b)=>b.date.localeCompare(a.date)).slice(0,10);
+      if(!wr.length) weak.innerHTML='<div class="empty">この期間に苦手フラグのある記録はありません。</div>';
+      else wr.forEach(r=>weak.appendChild(recordItem(r)));
+    }
+  };
+
+  renderFuturePlans = function(){
+    const box=document.getElementById("futurePlans");
+    if(!box) return;
+    const futures=state.materials.filter(m=>isFutureMaterial(m)).map(m=>({m,e:estimate(m)})).sort((a,b)=>a.m.startDate.localeCompare(b.m.startDate));
+    box.innerHTML="";
+    if(!futures.length){ box.innerHTML='<div class="empty">開始日前の教材はありません。</div>'; return; }
+    futures.slice(0,12).forEach(({m,e})=>{
+      const div=document.createElement("div");
+      div.className="item";
+      div.innerHTML=`<div class="item-head"><div><div class="title">${esc(m.name)}</div><div class="small">開始日：${esc(m.startDate)} / 期限：${esc(m.deadline)} / 範囲 ${esc(rangesToText(m.ranges,m.unitLabel))}</div></div><span class="badge blue">開始前</span></div><div class="badges"><span class="badge">開始まで ${Math.max(0, daysInc(today(), addDays(m.startDate,-1)))}日</span><span class="badge">予定期間 ${Math.max(0,e.days)}日</span><span class="badge">残り約 ${fmtMin(e.remainingMinutes)}</span><span class="badge">1日約 ${fmtMin(e.requiredPerDay)}</span></div>`;
+      box.appendChild(div);
+    });
+  };
+
+  renderToday = function(){
+    const date=today();
+    const due = sortedTasks(state.tasks.filter(t=>!t.done && t.dueDate<=date));
+    const total = due.reduce((s,t)=>s+taskEstimate(t),0);
+    const carry = due.filter(t=>t.dueDate<date).length;
+    const w=warnings();
+    document.getElementById("metricToday").textContent=fmtMin(total);
+    document.getElementById("metricTodaySub").textContent=`未完了 ${due.length}件`;
+    document.getElementById("metricMode").textContent=modeLabel[modeForToday()];
+    document.getElementById("metricCapacity").textContent=`上限 ${fmtMin(capacityForDate(date))} / モード反映後 ${fmtMin(todayCapacity())}`;
+    document.getElementById("metricCarry").textContent=carry+"件";
+    document.getElementById("metricWarnings").textContent=w.length+"件";
+    document.getElementById("todayMode").value=modeForToday();
+    const notice=document.getElementById("todayNotice");
+    if(!due.length){ notice.innerHTML='<div class="notice good">今日の未完了タスクはありません。開始日を迎えた教材があれば、「今日の計画を作り直す」で作成できます。</div>'; }
+    else if(total>todayCapacity() && modeForToday()!=="rest"){ notice.innerHTML=`<div class="notice bad">持ち越し・復習を含めた合計が、今日の上限を約${fmtMin(total-todayCapacity())}超えています。未完了タスクは消さずに持ち越します。</div>`; }
+    else { notice.innerHTML='<div class="notice good">未完了タスクはそのまま持ち越し、新規タスクは残り時間に収まる範囲で作成します。</div>'; }
+    const list=document.getElementById("todayTasks");
+    list.innerHTML="";
+    if(!due.length) list.innerHTML='<div class="empty">今日やることはまだありません。</div>';
+    else due.forEach((t,i)=>list.appendChild(taskItem(t,i+1)));
+    renderFuturePlans();
+    const wl=document.getElementById("warningsList");
+    wl.innerHTML="";
+    if(!w.length) wl.innerHTML='<div class="empty">今の設定では大きな期限警告はありません。</div>';
+    else w.slice(0,10).forEach(x=>{ const div=document.createElement("div"); div.className="notice bad"; div.textContent=x.message; wl.appendChild(div); });
+  };
+
+  materialItem = function(m){
+    const e=estimate(m);
+    const div=document.createElement("div");
+    div.className="item";
+    const rem=remainingRanges(m.id);
+    const next=rem[0];
+    const future=isFutureMaterial(m);
+    div.innerHTML=`
+      <div class="item-head"><div><div class="title">${esc(m.name)}</div><div class="small">${esc(m.category||"カテゴリなし")} / 範囲 ${esc(rangesToText(m.ranges,m.unitLabel))}</div></div><span class="badge ${e.remaining? future?"blue":"warn":"good"}">${e.remaining? future?"開始前":"進行中":"完了"}</span></div>
+      <div class="progress"><div class="bar" style="width:${Math.min(100,Math.max(0,e.progress))}%"></div></div>
+      <div class="badges"><span class="badge">進捗 ${Math.round(e.progress)}%</span><span class="badge">開始 ${esc(displayStartDate(m))}</span><span class="badge">完了 ${e.done}/${e.targetTotal}${esc(m.unitLabel)}</span><span class="badge">残り ${e.remaining}${esc(m.unitLabel)}</span><span class="badge">残り約 ${fmtMin(e.remainingMinutes)}</span><span class="badge">1${esc(m.unitLabel)} 約${e.predicted.toFixed(1)}分</span></div>
+      <div class="twocol"><div>期限：${esc(m.deadline)}（${future?"開始後":"あと"}${Math.max(0,e.days)}日）</div><div>1日あたり必要：約${fmtMin(e.requiredPerDay)}</div><div>次の未完了：${next?rangeText(m,next.start,next.end):"なし"}</div><div>優先度：${priorityLabel[m.priority]} / 平均難易度：${e.avgDiff.toFixed(1)}</div></div>
+      ${m.memo?`<div class="small" style="margin-top:8px;">メモ：${esc(m.memo)}</div>`:""}
+      <div class="actions" style="margin-top:10px"><button data-detail="${m.id}">詳細</button><button class="secondary" data-edit="${m.id}">編集</button><button class="ghost" data-del="${m.id}">削除</button></div>`;
+    div.querySelector("[data-detail]").onclick=()=>showMaterialDetail(m.id);
+    div.querySelector("[data-edit]").onclick=()=>editMat(m.id);
+    div.querySelector("[data-del]").onclick=()=>deleteMat(m.id);
+    return div;
+  };
+
+  renderMaterialDetail = function(){
+    const card=document.getElementById("materialDetailCard");
+    const box=document.getElementById("materialDetail");
+    const title=document.getElementById("materialDetailTitle");
+    if(!card||!box||!title) return;
+    const m=mat(selectedMaterialId);
+    if(!m){ card.classList.add("hidden"); box.innerHTML=""; return; }
+    card.classList.remove("hidden");
+    const e=estimate(m), done=completedRanges(m.id), rem=remainingRanges(m.id), recs=recordsFor(m.id).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,8), pending=state.tasks.filter(t=>t.materialId===m.id&&!t.done).sort((a,b)=>a.dueDate.localeCompare(b.dueDate)).slice(0,8);
+    title.textContent=`教材詳細：${m.name}`;
+    box.innerHTML=`<div class="statgrid"><div class="statbox"><div class="small">進捗</div><div class="num">${Math.round(e.progress)}%</div></div><div class="statbox"><div class="small">完了範囲</div><div class="num">${e.done}/${e.targetTotal}${esc(m.unitLabel)}</div></div><div class="statbox"><div class="small">残り時間</div><div class="num">${fmtMin(e.remainingMinutes)}</div></div><div class="statbox"><div class="small">1${esc(m.unitLabel)}予測</div><div class="num">${e.predicted.toFixed(1)}分</div></div></div><div class="progress"><div class="bar" style="width:${Math.min(100,Math.max(0,e.progress))}%"></div></div><div class="grid" style="margin-top:12px;"><div class="span-6"><h3>範囲</h3><div class="small"><strong>対象：</strong>${esc(rangesToText(m.ranges,m.unitLabel)||"なし")}</div><div class="small"><strong>完了：</strong>${esc(rangesToText(done,m.unitLabel)||"なし")}</div><div class="small"><strong>未完了：</strong>${esc(rangesToText(rem,m.unitLabel)||"なし")}</div></div><div class="span-6"><h3>予定</h3><div class="small">開始日：${esc(displayStartDate(m))}</div><div class="small">期限：${esc(m.deadline)} / 計画日数 ${Math.max(0,e.days)}日</div><div class="small">1日あたり必要：約${fmtMin(e.requiredPerDay)}</div><div class="small">1単位あたりの予測時間は、新規学習の記録・難易度・集中度から自動更新されます。</div></div><div class="span-6"><h3>最近の記録</h3><div id="detailRecords" class="list"></div></div><div class="span-6"><h3>未完了タスク</h3><div id="detailTasks" class="list"></div></div></div>`;
+    const dr=box.querySelector("#detailRecords"); if(!recs.length) dr.innerHTML='<div class="empty">この教材の記録はまだありません。</div>'; else recs.forEach(r=>dr.appendChild(recordItem(r)));
+    const dt=box.querySelector("#detailTasks"); if(!pending.length) dt.innerHTML='<div class="empty">この教材の未完了タスクはありません。</div>'; else pending.forEach((t,i)=>dt.appendChild(taskItem(t,i+1)));
+  };
+
+  const oldEditMat = editMat;
+  editMat = function(mid){ oldEditMat(mid); const m=mat(mid); const el=document.getElementById("matStartDate"); if(el && m) el.value=m.startDate||""; };
+  const oldResetMatForm = resetMatForm;
+  resetMatForm = function(){ oldResetMatForm(); const el=document.getElementById("matStartDate"); if(el) el.value=""; };
+
+  renderSettings = function(){
+    ensureSettingsDefaults();
+    for(let i=0;i<7;i++){ const el=document.getElementById("cap"+i); if(el) el.value=state.settings.capacities[i]??0; }
+    const boundaryEl = document.getElementById("dayBoundaryHour"); if(boundaryEl) boundaryEl.value = String(state.settings.dayBoundaryHour ?? 4);
+    const help = document.getElementById("boundaryHelp"); if(help) help.textContent = `現在時刻：${actualDateTimeLabel()} / アプリ上の今日：${today()}。${state.settings.dayBoundaryHour ?? 4}:00より前の記録・タスクは前日扱いになります。`;
+    const themeEl=document.getElementById("themeSelect"); if(themeEl) themeEl.value=themeValue();
+    applyTheme();
+  };
+
+  function attachPatchEvents(){
+    document.querySelectorAll("#analysisPeriodMode button").forEach(btn=>{
+      btn.onclick=()=>{ state.settings.analysisMode=btn.dataset.mode; saveLocalOnly(); renderAnalysis(); };
+    });
+    const apply=document.getElementById("applyAnalysisPeriod");
+    if(apply) apply.onclick=()=>{
+      const w=document.getElementById("analysisWeekDate"); if(w) state.settings.analysisWeekDate=w.value||today();
+      const y=document.getElementById("analysisYear"); if(y) state.settings.analysisYear=Number(y.value||today().slice(0,4));
+      const s=document.getElementById("analysisStart"); if(s) state.settings.analysisStart=s.value||addDays(today(),-6);
+      const e=document.getElementById("analysisEnd"); if(e) state.settings.analysisEnd=e.value||today();
+      if(state.settings.analysisStart>state.settings.analysisEnd){ const tmp=state.settings.analysisStart; state.settings.analysisStart=state.settings.analysisEnd; state.settings.analysisEnd=tmp; }
+      saveLocalOnly(); renderAnalysis();
+    };
+    const weekDate=document.getElementById("analysisWeekDate");
+    if(weekDate) weekDate.onchange=()=>{ state.settings.analysisWeekDate=weekDate.value||today(); saveLocalOnly(); renderAnalysis(); };
+    const tf=document.getElementById("themeForm");
+    if(tf) tf.onsubmit=(e)=>{ e.preventDefault(); state.settings.theme=document.getElementById("themeSelect").value; applyTheme(); save(); renderSettings(); toast("テーマを保存しました"); };
+    const ts=document.getElementById("themeSelect");
+    if(ts) ts.onchange=()=>{ state.settings.theme=ts.value; applyTheme(); };
+
+    const form=document.getElementById("materialForm");
+    if(form){
+      form.onsubmit=e=>{
+        e.preventDefault();
+        const ranges=collectRangeRows();
+        if(!ranges.length){ alert("範囲の開始番号と終了番号を入れてください。"); return; }
+        const mid=document.getElementById("materialId").value || id("mat");
+        const startDate = document.getElementById("matStartDate")?.value || "";
+        const obj={id:mid,name:document.getElementById("matName").value.trim(),category:document.getElementById("matCategory").value.trim(),unitLabel:document.getElementById("matUnit").value.trim()||"p",startDate:startDate||null,deadline:document.getElementById("matDeadline").value,priority:document.getElementById("matPriority").value,ranges,defaultDifficulty:Number(document.getElementById("matDefaultDiff").value),baseMinutes:Number(document.getElementById("matBaseMin").value||6),memo:document.getElementById("matMemo").value.trim(),updatedAt:new Date().toISOString()};
+        if(!obj.name){ alert("教材名を入れてください。"); return; }
+        if(obj.startDate && obj.deadline && obj.startDate > obj.deadline){ alert("開始日は期限より前にしてください。"); return; }
+        const idx=state.materials.findIndex(m=>m.id===mid);
+        if(idx>=0) state.materials[idx]={...state.materials[idx],...obj}; else state.materials.push({...obj,createdAt:new Date().toISOString()});
+        save(); resetMatForm(); render(); toast(idx>=0?"教材を更新しました":"教材を登録しました");
+      };
+    }
+  }
+
+  const oldRender = render;
+  render = function(){
+    ensurePatchDom(); ensureSettingsDefaults(); applyTheme();
+    buildTodayPlan(false); renderOptions(); renderToday(); renderAnalysis(); renderMaterials(); renderRecords(); renderTasks(); renderSettings(); updateAuthUI();
+  };
+
+  ensurePatchDom();
+  ensureSettingsDefaults();
+  applyTheme();
+  attachPatchEvents();
+  state = normalizeStateData(state);
+  render();
+})();
+</script>
+
+</body>
+</html>
