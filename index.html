@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>学習負荷プランナー v0.5.4</title>
+  <title>学習負荷プランナー v0.5.5</title>
   <style>
     :root {
       --bg: #f7f3ee;
@@ -184,6 +184,8 @@
     .timer-box { border:1px solid var(--line); background:#fffaf4; border-radius:16px; padding:12px; display:grid; gap:10px; }
     .timer-display { font-size:34px; font-weight:950; letter-spacing:.04em; font-variant-numeric:tabular-nums; }
     .timer-actions { display:flex; flex-wrap:wrap; gap:8px; }
+    .timer-status { border:1px solid var(--line); background:rgba(255,255,255,.72); border-radius:12px; padding:8px 10px; color:var(--muted); font-size:12px; line-height:1.55; }
+    body[data-theme="dark"] .timer-status { background:rgba(42,42,45,.7); color:var(--muted); }
 
     /* v0.5.3 additions */
     body[data-theme="light"] {
@@ -354,8 +356,8 @@
   <header>
     <div class="head">
       <div>
-        <h1>学習負荷プランナー v0.5.4</h1>
-        <p class="sub">ダークテーマの視認性改善、週別グラフ、更新履歴タブに対応。</p>
+        <h1>学習負荷プランナー v0.5.5</h1>
+        <p class="sub">タイマー復元、ダークテーマの視認性改善、週別グラフ、更新履歴タブに対応。</p>
       </div>
       <div class="actions">
         <span class="auth-status" id="cloudStatus"><span class="dot" id="cloudDot"></span><span id="cloudStatusText">未ログイン</span></span>
@@ -599,7 +601,8 @@
                 <button type="button" class="secondary" id="timerApply">時間欄に反映</button>
                 <button type="button" class="ghost" id="timerReset">リセット</button>
               </div>
-              <div class="small">測った時間は「時間欄に反映」を押すと分単位で入ります。30秒以上は切り上げます。</div>
+              <div class="timer-status" id="timerStatus">タイマーはこの端末に一時保存されます。アプリを閉じても、次に開いた時に復元します。</div>
+              <div class="small">測った時間は「時間欄に反映」を押すと分単位で入ります。反映後、記録が終わったらリセットしてください。</div>
             </div>
             <div class="row2">
               <label>範囲 開始 <input id="recStart" type="number" min="0" step="1" required></label>
@@ -748,7 +751,15 @@
         <div class="card span-12">
           <h2>今回のアップデート内容</h2>
           <div class="notice good">
-            v0.5.4では、データ保存方式は変えずに、表示と分析まわりだけを中心に修正しています。更新前には念のためバックアップを書き出してください。
+            v0.5.5では、データ保存方式は変えずに、タイマーの途中状態だけを端末内に一時保存するようにしました。更新前には念のためバックアップを書き出してください。
+          </div>
+        </div>
+        <div class="card span-12">
+          <h2>v0.5.5</h2>
+          <div class="list">
+            <div class="item"><div class="title">タイマー復元に対応</div><div class="small">開始中・一時停止中のストップウォッチを端末内に一時保存し、アプリを閉じても次回表示時に復元します。</div></div>
+            <div class="item"><div class="title">動作中のタイマーは経過時間を再計算</div><div class="small">閉じている間にJavaScriptが止まっても、開始時刻から現在時刻を引いて経過時間を表示します。</div></div>
+            <div class="item"><div class="title">記録データとは分離</div><div class="small">タイマーの途中状態はSupabaseの正式な学習記録には入れず、「時間欄に反映」または「記録する」までは下書き扱いにします。</div></div>
           </div>
         </div>
         <div class="card span-6">
@@ -771,7 +782,7 @@
         <div class="card span-12">
           <h2>データ保護メモ</h2>
           <div class="notice">
-            このアップデートではSupabaseのテーブル構成や保存先は変更していません。既存データには、週別グラフ用の設定値だけを追加します。
+            このアップデートではSupabaseのテーブル構成や保存先は変更していません。タイマーの途中状態は端末内だけに一時保存し、教材・記録・タスクの既存データ構造は変更しません。
             ただし、アップデート前と本番差し替え前には、あなたと彼氏の両方でバックアップを書き出してください。
           </div>
         </div>
@@ -786,6 +797,7 @@
 const SUPABASE_URL = "https://xowbuznsmhgwtjejgzsj.supabase.co";
 const SUPABASE_KEY = "sb_publishable_dwwnnDrLB0XO9F78f2lXqg_CUblib7f";
 const KEY = "study-load-planner-v05";
+const TIMER_KEY = KEY + "-stopwatch-draft";
 const OLD_KEY = "study-load-planner-v04";
 const OLD_KEY1 = "study-load-planner-v03";
 const OLD_KEY2 = "study-load-planner-v02";
@@ -1982,9 +1994,68 @@ function formatStopwatch(ms){
   return [h,m,s].map(x=>String(x).padStart(2,"0")).join(":");
 }
 
+function timerDraftPayload(){
+  return {
+    elapsedMs: Math.max(0, Math.round(stopwatchElapsedMs || 0)),
+    startedAt: stopwatchStartedAt || null,
+    running: Boolean(stopwatchStartedAt),
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function saveStopwatchDraft(){
+  try{
+    if(currentStopwatchMs() <= 0 && !stopwatchStartedAt){
+      localStorage.removeItem(TIMER_KEY);
+      return;
+    }
+    localStorage.setItem(TIMER_KEY, JSON.stringify(timerDraftPayload()));
+  }catch(e){
+    console.warn("タイマー下書きの保存に失敗しました", e);
+  }
+}
+
+function clearStopwatchDraft(){
+  try{ localStorage.removeItem(TIMER_KEY); }catch(e){}
+}
+
+function restoreStopwatchDraft(){
+  try{
+    const raw = localStorage.getItem(TIMER_KEY);
+    if(!raw) return;
+    const saved = JSON.parse(raw);
+    stopwatchElapsedMs = Math.max(0, Number(saved.elapsedMs) || 0);
+    const startedAt = Number(saved.startedAt) || 0;
+    stopwatchStartedAt = saved.running && startedAt ? startedAt : null;
+    if(stopwatchStartedAt){
+      clearInterval(stopwatchTimer);
+      stopwatchTimer = setInterval(renderStopwatch, 500);
+    }
+  }catch(e){
+    console.warn("タイマー下書きの復元に失敗しました", e);
+    stopwatchElapsedMs = 0;
+    stopwatchStartedAt = null;
+    clearStopwatchDraft();
+  }
+}
+
+function updateStopwatchStatus(){
+  const status = document.getElementById("timerStatus");
+  if(!status) return;
+  const ms = currentStopwatchMs();
+  if(stopwatchStartedAt){
+    status.textContent = "計測中です。アプリを閉じても、次に開いた時に開始時刻から経過時間を再計算します。";
+  }else if(ms > 0){
+    status.textContent = "一時停止中または未反映の時間があります。この端末に一時保存中です。";
+  }else{
+    status.textContent = "タイマーはこの端末に一時保存されます。アプリを閉じても、次に開いた時に復元します。";
+  }
+}
+
 function renderStopwatch(){
   const el = document.getElementById("timerDisplay");
   if(el) el.textContent = formatStopwatch(currentStopwatchMs());
+  updateStopwatchStatus();
 }
 
 function startStopwatch(){
@@ -1992,6 +2063,7 @@ function startStopwatch(){
   stopwatchStartedAt = Date.now();
   clearInterval(stopwatchTimer);
   stopwatchTimer = setInterval(renderStopwatch, 500);
+  saveStopwatchDraft();
   renderStopwatch();
 }
 
@@ -2001,6 +2073,7 @@ function pauseStopwatch(){
   stopwatchStartedAt = null;
   clearInterval(stopwatchTimer);
   stopwatchTimer = null;
+  saveStopwatchDraft();
   renderStopwatch();
 }
 
@@ -2009,6 +2082,7 @@ function resetStopwatch(){
   stopwatchStartedAt = null;
   clearInterval(stopwatchTimer);
   stopwatchTimer = null;
+  clearStopwatchDraft();
   renderStopwatch();
 }
 
@@ -2019,8 +2093,15 @@ function applyStopwatchToMinutes(){
   const minutes = Math.max(1, Math.ceil(seconds / 60));
   const input = document.getElementById("recMinutes");
   if(input) input.value = minutes;
+  saveStopwatchDraft();
   toast(`${minutes}分を時間欄に反映しました`);
 }
+
+window.addEventListener("beforeunload", saveStopwatchDraft);
+window.addEventListener("pagehide", saveStopwatchDraft);
+window.addEventListener("visibilitychange", () => {
+  if(!document.hidden) renderStopwatch();
+});
 
 document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>switchTab(t.dataset.tab));
 const dailyAnalysisModeEl = document.getElementById("dailyAnalysisMode");
@@ -2182,6 +2263,7 @@ if(logoutBtn) logoutBtn.onclick = async ()=>{ try{ await logout(); }catch(e){ al
   if(id==="timerReset") el.onclick = resetStopwatch;
   if(id==="timerApply") el.onclick = applyStopwatchToMinutes;
 });
+restoreStopwatchDraft();
 renderStopwatch();
 ["loadCloudBtn","loadCloudBtn2"].forEach(x=>{ const b=document.getElementById(x); if(b) b.onclick=()=>loadCloudDataManual(); });
 ["saveCloudBtn","saveCloudBtn2"].forEach(x=>{ const b=document.getElementById(x); if(b) b.onclick=()=>saveCloudData(true); });
@@ -2191,9 +2273,9 @@ initCloud();
 </script>
 
 <script>
-/* v0.5.4 patch: start dates, safer carryover, week analysis graphs, themes, update log */
+/* v0.5.5 patch: start dates, safer carryover, week analysis graphs, themes, update log, timer restore */
 (function(){
-  const VERSION_053 = 5.4;
+  const VERSION_055 = 5.5;
 
   function ensurePatchDom(){
     const analysis = document.getElementById("analysis");
@@ -2326,7 +2408,7 @@ initCloud();
 
   defaultState = function(){
     return {
-      version:VERSION_053,
+      version:VERSION_055,
       materials:[], records:[], tasks:[],
       settings:{
         capacities:{0:120,1:45,2:60,3:45,4:30,5:90,6:120},
@@ -2342,7 +2424,7 @@ initCloud();
     const d = defaultState();
     const s = data && typeof data === "object" ? data : {};
     return {
-      ...d, ...s, version:VERSION_053,
+      ...d, ...s, version:VERSION_055,
       materials:Array.isArray(s.materials)?s.materials:[],
       records:Array.isArray(s.records)?s.records:[],
       tasks:Array.isArray(s.tasks)?s.tasks:[],
@@ -2364,7 +2446,7 @@ initCloud();
   };
 
   saveLocalOnly = function(){
-    state.version = VERSION_053;
+    state.version = VERSION_055;
     ensureSettingsDefaults();
     localStorage.setItem(KEY, JSON.stringify(state));
   };
