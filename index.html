@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>学習負荷プランナー v0.5.1</title>
+  <title>学習負荷プランナー v0.5.2</title>
   <style>
     :root {
       --bg: #f7f3ee;
@@ -169,7 +169,14 @@
     .dot { width:9px; height:9px; border-radius:50%; background:var(--bad); display:inline-block; }
     .dot.good { background:var(--good); }
     .cloud-line { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
-    .cloud-pill { border-radius:999px; padding:5px 9px; font-size:12px; font-weight:850; background:#f1e8df; color:#5b4a3c; }
+     .cloud-pill { border-radius:999px; padding:5px 9px; font-size:12px; font-weight:850; background:#f1e8df; color:#5b4a3c; }
+    .cloud-pill.good { color:var(--good); background:rgba(47,125,85,.12); }
+    .cloud-pill.warn { color:var(--warn); background:rgba(184,117,43,.13); }
+    .cloud-pill.bad { color:var(--bad); background:rgba(179,75,75,.12); }
+    .auth-message { margin-top:10px; border:1px solid var(--line); border-radius:14px; padding:10px 12px; font-size:13px; line-height:1.55; background:#fffaf4; color:#5b4a3c; }
+    .auth-message.good { border-color:rgba(47,125,85,.25); background:rgba(47,125,85,.06); color:#245f42; }
+    .auth-message.warn { border-color:rgba(184,117,43,.25); background:rgba(184,117,43,.07); color:#7a4d18; }
+    .auth-message.bad { border-color:rgba(179,75,75,.28); background:rgba(179,75,75,.06); color:#743434; }
 
     .auth-form.password { display:grid; grid-template-columns:minmax(220px,1fr) minmax(180px,1fr); gap:10px; align-items:end; max-width:640px; }
     .auth-form.password .auth-buttons { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:8px; }
@@ -183,8 +190,8 @@
   <header>
     <div class="head">
       <div>
-        <h1>学習負荷プランナー v0.5.1</h1>
-        <p class="sub">メール＋パスワードログイン・クラウド保存・ストップウォッチ記録・教材別分析に対応。</p>
+        <h1>学習負荷プランナー v0.5.2</h1>
+        <p class="sub">ログイン専用・クラウド同期状態表示・未同期警告・ストップウォッチ記録に対応。</p>
       </div>
       <div class="actions">
         <span class="auth-status" id="cloudStatus"><span class="dot" id="cloudDot"></span><span id="cloudStatusText">未ログイン</span></span>
@@ -200,11 +207,13 @@
       <div class="auth-top">
         <div>
           <h2>ログイン / クラウド保存</h2>
-          <p class="small" id="authHelp">メール＋パスワードでログインすると、教材・記録・タスクをSupabaseに保存できます。初回ログイン時、クラウドにデータがなければ今のローカルデータをアップロードします。</p>
+          <p class="small" id="authHelp">管理画面で作成済みのメール＋パスワードでログインします。ログイン中の変更はクラウドへ自動保存されます。</p>
           <div class="cloud-line">
             <span class="cloud-pill" id="userEmailPill">未ログイン</span>
             <span class="cloud-pill" id="cloudLastSaved">クラウド未同期</span>
+            <span class="cloud-pill warn" id="localUnsyncedPill">未同期なし</span>
           </div>
+          <div class="auth-message" id="authMessage">ログインするとクラウド同期が有効になります。</div>
         </div>
         <form class="auth-form password" id="loginForm">
           <label>メールアドレス
@@ -215,7 +224,6 @@
           </label>
           <div class="auth-buttons">
             <button type="button" id="signInBtn">ログイン</button>
-            <button type="button" class="secondary" id="signUpBtn">アカウント作成</button>
             <button type="button" class="secondary" id="logoutBtn">ログアウト</button>
           </div>
         </form>
@@ -225,7 +233,7 @@
         <button class="secondary" id="loadCloudBtn">クラウドから読み込み</button>
         <button class="secondary" id="saveCloudBtn">今のデータをクラウドへ保存</button>
       </div>
-      <p class="small" style="margin-top:8px;">メール送信制限を避けるため、v0.5.1ではメール＋パスワードログインに変更しました。初回作成で確認メールが必要になる場合は、SupabaseのEmail設定を確認してください。</p>
+      <p class="small" style="margin-top:8px;">この画面では新規アカウント作成はできません。ユーザー追加はSupabaseのAuthentication → Users → Create new userから行ってください。</p>
     </section>
 
     <nav class="tabs">
@@ -401,6 +409,7 @@
       <div class="grid">
         <div class="card span-5">
           <h2 id="recordTitle">学習を記録</h2>
+          <div class="notice warn" id="recordLoginWarning" style="margin-bottom:10px;">未ログイン中の記録はクラウドへ自動保存されません。ログインしてから記録するのが安全です。</div>
           <form id="recordForm">
             <input type="hidden" id="recordTaskId">
             <label>教材 <select id="recMaterial" required></select></label>
@@ -597,10 +606,12 @@ let cloudSaveTimer = null;
 let isApplyingCloudData = false;
 let lastCloudSavedAt = null;
 let lastCloudLoadedAt = null;
+let hasLocalUnsyncedChanges = localStorage.getItem(KEY+"-unsynced") === "1";
+let lastLoggedOutSaveWarning = 0;
 
 function defaultState(){
   return {
-    version:5.1,
+    version:5.2,
     materials:[],
     records:[],
     tasks:[],
@@ -635,13 +646,36 @@ function load(){
 }
 
 function saveLocalOnly(){
-  state.version = 5;
+  state.version = 5.2;
   localStorage.setItem(KEY, JSON.stringify(state));
+}
+
+function markUnsynced(message=true){
+  if(!hasMeaningfulData(state)) return;
+  hasLocalUnsyncedChanges = true;
+  localStorage.setItem(KEY+"-unsynced", "1");
+  updateAuthUI("ログアウト中の変更があります。ログイン後に端末データをクラウドへ保存するか選べます。", "warn");
+  if(message){
+    const now = Date.now();
+    if(now - lastLoggedOutSaveWarning > 5000){
+      toast("ログアウト中：クラウド未同期の変更があります");
+      lastLoggedOutSaveWarning = now;
+    }
+  }
+}
+
+function clearUnsynced(){
+  hasLocalUnsyncedChanges = false;
+  localStorage.removeItem(KEY+"-unsynced");
 }
 
 function save(){
   saveLocalOnly();
-  scheduleCloudSave();
+  if(currentUser){
+    scheduleCloudSave();
+  } else {
+    markUnsynced(true);
+  }
 }
 
 function hasMeaningfulData(data=state){
@@ -654,7 +688,7 @@ function normalizeStateData(data){
   return {
     ...d,
     ...s,
-    version:5.1,
+    version:5.2,
     materials:Array.isArray(s.materials)?s.materials:[],
     records:Array.isArray(s.records)?s.records:[],
     tasks:Array.isArray(s.tasks)?s.tasks:[],
@@ -1547,24 +1581,50 @@ async function initCloud(){
   }
 }
 
-function updateAuthUI(message){
+function setAuthMessage(message, kind=""){
+  const box = document.getElementById("authMessage");
+  if(!box) return;
+  box.classList.remove("good","warn","bad");
+  if(kind) box.classList.add(kind);
+  box.textContent = message || "";
+}
+
+function updateAuthUI(message, kind=""){
   const email = currentUser?.email || "";
   const loggedIn = Boolean(currentUser);
   const statusText = document.getElementById("cloudStatusText");
   const dot = document.getElementById("cloudDot");
   const pill = document.getElementById("userEmailPill");
   const last = document.getElementById("cloudLastSaved");
+  const unsyncedPill = document.getElementById("localUnsyncedPill");
   const detail = document.getElementById("cloudDetailText");
   const logout = document.getElementById("logoutBtn");
   const loadBtn = document.getElementById("loadCloudBtn");
   const saveBtn = document.getElementById("saveCloudBtn");
   const loadBtn2 = document.getElementById("loadCloudBtn2");
   const saveBtn2 = document.getElementById("saveCloudBtn2");
-  if(statusText) statusText.textContent = loggedIn ? "クラウド同期ON" : "未ログイン";
+  const recordWarning = document.getElementById("recordLoginWarning");
+  if(statusText) statusText.textContent = loggedIn ? "ログイン中・同期ON" : "未ログイン";
   if(dot) dot.classList.toggle("good", loggedIn);
-  if(pill) pill.textContent = loggedIn ? email : "未ログイン";
-  if(last) last.textContent = lastCloudSavedAt ? `最終保存 ${lastCloudSavedAt}` : (lastCloudLoadedAt ? `最終読込 ${lastCloudLoadedAt}` : "クラウド未同期");
-  if(detail) detail.textContent = message || (loggedIn ? `ログイン中：${email}。保存時にクラウドへ自動同期します。` : "未ログインです。メールリンクでログインしてください。");
+  if(pill){
+    pill.textContent = loggedIn ? `ログイン中：${email}` : "未ログイン";
+    pill.classList.toggle("good", loggedIn);
+  }
+  if(last){
+    last.textContent = lastCloudSavedAt ? `最終保存 ${lastCloudSavedAt}` : (lastCloudLoadedAt ? `最終読込 ${lastCloudLoadedAt}` : "クラウド未同期");
+    last.classList.toggle("good", Boolean(lastCloudSavedAt || lastCloudLoadedAt));
+  }
+  if(unsyncedPill){
+    unsyncedPill.textContent = hasLocalUnsyncedChanges ? "端末に未同期あり" : "未同期なし";
+    unsyncedPill.classList.toggle("warn", hasLocalUnsyncedChanges);
+    unsyncedPill.classList.toggle("good", !hasLocalUnsyncedChanges && loggedIn);
+  }
+  const defaultMessage = loggedIn
+    ? `ログイン完了：${email}。変更はクラウドへ自動保存されます。`
+    : "未ログインです。ログイン中だけクラウド保存されます。ログアウト中の記録は端末内に残りますが、ログイン時に扱いを選ぶ必要があります。";
+  if(detail) detail.textContent = message || defaultMessage;
+  setAuthMessage(message || defaultMessage, kind || (loggedIn ? "good" : (hasLocalUnsyncedChanges ? "warn" : "")));
+  if(recordWarning) recordWarning.classList.toggle("hidden", loggedIn);
   [logout, loadBtn, saveBtn, loadBtn2, saveBtn2].forEach(btn=>{ if(btn) btn.disabled = !loggedIn; });
 }
 
@@ -1624,26 +1684,38 @@ async function fetchCloudRow(){
 async function autoLoadOrCreateCloudData(){
   if(!currentUser || !supabaseClient) return;
   try{
-    updateAuthUI("クラウドデータを確認中...");
+    updateAuthUI("ログインしました。クラウドデータを確認中...", "good");
     const row = await fetchCloudRow();
     if(row && row.data && hasMeaningfulData(row.data)){
-      // ローカルの退避を残してから、クラウドを正として読み込む
+      if(hasLocalUnsyncedChanges && hasMeaningfulData(state)){
+        const useLocal = confirm("この端末にログアウト中の未同期データがあります。\n\nOK：この端末のデータをクラウドへ保存する\nキャンセル：クラウドのデータを読み込む");
+        if(useLocal){
+          await saveCloudData(true);
+          clearUnsynced();
+          updateAuthUI("端末データをクラウドへ保存しました。", "good");
+          return;
+        }
+      }
       localStorage.setItem(KEY+"-before-cloud-load", JSON.stringify(state));
       isApplyingCloudData = true;
       state = normalizeStateData(row.data);
       state._cloudUpdatedAt = row.updated_at;
       lastCloudLoadedAt = new Date().toLocaleString("ja-JP", {hour12:false});
+      clearUnsynced();
       saveLocalOnly();
       isApplyingCloudData = false;
       render();
+      updateAuthUI("クラウドから読み込みました。同期準備完了です。", "good");
       toast("クラウドから読み込みました");
     } else {
       await saveCloudData(true);
+      clearUnsynced();
+      updateAuthUI("クラウドに初期保存しました。同期準備完了です。", "good");
       toast("ローカルデータをクラウドに初期保存しました");
     }
   }catch(e){
     console.error(e);
-    updateAuthUI("クラウド読込エラー："+(e.message||e));
+    updateAuthUI("クラウド読込エラー："+(e.message||e), "bad");
     toast("クラウド読込に失敗しました");
   }
 }
@@ -1659,6 +1731,7 @@ async function loadCloudDataManual(){
     state = normalizeStateData(row.data);
     state._cloudUpdatedAt = row.updated_at;
     lastCloudLoadedAt = new Date().toLocaleString("ja-JP", {hour12:false});
+    clearUnsynced();
     saveLocalOnly();
     isApplyingCloudData = false;
     render();
@@ -1681,12 +1754,13 @@ async function saveCloudData(showToast=true){
     if(error) throw error;
     lastCloudSavedAt = new Date().toLocaleString("ja-JP", {hour12:false});
     if(data?.updated_at) state._cloudUpdatedAt = data.updated_at;
+    clearUnsynced();
     saveLocalOnly();
-    updateAuthUI();
+    updateAuthUI("クラウド保存完了：" + lastCloudSavedAt, "good");
     if(showToast) toast("クラウドに保存しました");
   }catch(e){
     console.error(e);
-    updateAuthUI("クラウド保存エラー："+(e.message||e));
+    updateAuthUI("クラウド保存エラー："+(e.message||e), "bad");
     if(showToast) alert("クラウド保存に失敗しました："+(e.message||e));
   }
 }
@@ -1884,23 +1958,18 @@ if(loginForm){
 const signInBtn = document.getElementById("signInBtn");
 if(signInBtn) signInBtn.onclick = async () => {
   try{
+    signInBtn.disabled = true;
+    signInBtn.textContent = "ログイン中...";
+    updateAuthUI("ログイン処理中です...", "warn");
     await signInWithPassword();
     toast("ログインしました");
+    updateAuthUI("ログインしました。クラウドデータを確認しています...", "good");
   }catch(err){
+    updateAuthUI("ログイン失敗："+(err.message||err), "bad");
     alert("ログインに失敗しました："+(err.message||err));
-  }
-};
-const signUpBtn = document.getElementById("signUpBtn");
-if(signUpBtn) signUpBtn.onclick = async () => {
-  try{
-    const data = await signUpWithPassword();
-    if(data?.session){
-      toast("アカウントを作成してログインしました");
-    } else {
-      alert("アカウント作成を受け付けました。確認メールが届いた場合は、メール内のリンクを開いてからログインしてください。確認メールが不要な設定なら、そのままログインできます。");
-    }
-  }catch(err){
-    alert("アカウント作成に失敗しました："+(err.message||err));
+  } finally {
+    signInBtn.disabled = false;
+    signInBtn.textContent = "ログイン";
   }
 };
 const logoutBtn = document.getElementById("logoutBtn");
