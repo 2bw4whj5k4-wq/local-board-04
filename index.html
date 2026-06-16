@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>学習負荷プランナー v0.5</title>
+  <title>学習負荷プランナー v0.5.1</title>
   <style>
     :root {
       --bg: #f7f3ee;
@@ -170,14 +170,21 @@
     .dot.good { background:var(--good); }
     .cloud-line { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
     .cloud-pill { border-radius:999px; padding:5px 9px; font-size:12px; font-weight:850; background:#f1e8df; color:#5b4a3c; }
+
+    .auth-form.password { display:grid; grid-template-columns:minmax(220px,1fr) minmax(180px,1fr); gap:10px; align-items:end; max-width:640px; }
+    .auth-form.password .auth-buttons { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:8px; }
+    @media (max-width: 680px) { .auth-form.password { grid-template-columns:1fr; } }
+    .timer-box { border:1px solid var(--line); background:#fffaf4; border-radius:16px; padding:12px; display:grid; gap:10px; }
+    .timer-display { font-size:34px; font-weight:950; letter-spacing:.04em; font-variant-numeric:tabular-nums; }
+    .timer-actions { display:flex; flex-wrap:wrap; gap:8px; }
   </style>
 </head>
 <body>
   <header>
     <div class="head">
       <div>
-        <h1>学習負荷プランナー v0.5</h1>
-        <p class="sub">ログイン・クラウド保存・数字だけの範囲指定・教材別分析・日付変更時刻に対応。</p>
+        <h1>学習負荷プランナー v0.5.1</h1>
+        <p class="sub">メール＋パスワードログイン・クラウド保存・ストップウォッチ記録・教材別分析に対応。</p>
       </div>
       <div class="actions">
         <span class="auth-status" id="cloudStatus"><span class="dot" id="cloudDot"></span><span id="cloudStatusText">未ログイン</span></span>
@@ -193,18 +200,24 @@
       <div class="auth-top">
         <div>
           <h2>ログイン / クラウド保存</h2>
-          <p class="small" id="authHelp">メールアドレスでログインすると、教材・記録・タスクをSupabaseに保存できます。初回ログイン時、クラウドにデータがなければ今のローカルデータをアップロードします。</p>
+          <p class="small" id="authHelp">メール＋パスワードでログインすると、教材・記録・タスクをSupabaseに保存できます。初回ログイン時、クラウドにデータがなければ今のローカルデータをアップロードします。</p>
           <div class="cloud-line">
             <span class="cloud-pill" id="userEmailPill">未ログイン</span>
             <span class="cloud-pill" id="cloudLastSaved">クラウド未同期</span>
           </div>
         </div>
-        <form class="auth-form" id="loginForm">
+        <form class="auth-form password" id="loginForm">
           <label>メールアドレス
-            <input id="loginEmail" type="email" autocomplete="email" placeholder="you@example.com">
+            <input id="loginEmail" type="email" autocomplete="email" placeholder="you@example.com" required>
           </label>
-          <button type="submit">ログインリンクを送る</button>
-          <button type="button" class="secondary" id="logoutBtn">ログアウト</button>
+          <label>パスワード
+            <input id="loginPassword" type="password" autocomplete="current-password" placeholder="8文字以上推奨" required>
+          </label>
+          <div class="auth-buttons">
+            <button type="button" id="signInBtn">ログイン</button>
+            <button type="button" class="secondary" id="signUpBtn">アカウント作成</button>
+            <button type="button" class="secondary" id="logoutBtn">ログアウト</button>
+          </div>
         </form>
       </div>
       <div class="divider"></div>
@@ -212,7 +225,7 @@
         <button class="secondary" id="loadCloudBtn">クラウドから読み込み</button>
         <button class="secondary" id="saveCloudBtn">今のデータをクラウドへ保存</button>
       </div>
-      <p class="small" style="margin-top:8px;">ログインリンクが届かない場合は、SupabaseのAuthentication → URL ConfigurationにGitHub PagesのURLが入っているか確認してください。</p>
+      <p class="small" style="margin-top:8px;">メール送信制限を避けるため、v0.5.1ではメール＋パスワードログインに変更しました。初回作成で確認メールが必要になる場合は、SupabaseのEmail設定を確認してください。</p>
     </section>
 
     <nav class="tabs">
@@ -401,6 +414,19 @@
               <label>日付 <input id="recDate" type="date" required></label>
               <label>時間（分） <input id="recMinutes" type="number" min="1" step="1" required></label>
             </div>
+            <div class="timer-box">
+              <div>
+                <div class="small">ストップウォッチ</div>
+                <div class="timer-display" id="timerDisplay">00:00:00</div>
+              </div>
+              <div class="timer-actions">
+                <button type="button" id="timerStart">開始</button>
+                <button type="button" class="secondary" id="timerPause">一時停止</button>
+                <button type="button" class="secondary" id="timerApply">時間欄に反映</button>
+                <button type="button" class="ghost" id="timerReset">リセット</button>
+              </div>
+              <div class="small">測った時間は「時間欄に反映」を押すと分単位で入ります。30秒以上は切り上げます。</div>
+            </div>
             <div class="row2">
               <label>範囲 開始 <input id="recStart" type="number" min="0" step="1" required></label>
               <label>範囲 終了 <input id="recEnd" type="number" min="0" step="1" required></label>
@@ -574,7 +600,7 @@ let lastCloudLoadedAt = null;
 
 function defaultState(){
   return {
-    version:5,
+    version:5.1,
     materials:[],
     records:[],
     tasks:[],
@@ -628,7 +654,7 @@ function normalizeStateData(data){
   return {
     ...d,
     ...s,
-    version:5,
+    version:5.1,
     materials:Array.isArray(s.materials)?s.materials:[],
     records:Array.isArray(s.records)?s.records:[],
     tasks:Array.isArray(s.tasks)?s.tasks:[],
@@ -1466,7 +1492,7 @@ function exportData(){
   const blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a");
-  a.href=url; a.download=`study-load-planner-v05-backup-${today()}.json`;
+  a.href=url; a.download=`study-load-planner-v051-backup-${today()}.json`;
   document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   toast("バックアップを書き出しました");
 }
@@ -1542,16 +1568,33 @@ function updateAuthUI(message){
   [logout, loadBtn, saveBtn, loadBtn2, saveBtn2].forEach(btn=>{ if(btn) btn.disabled = !loggedIn; });
 }
 
-async function sendLoginLink(email){
+function getAuthInput(){
+  const email = String(document.getElementById("loginEmail")?.value || "").trim();
+  const password = String(document.getElementById("loginPassword")?.value || "");
+  if(!email) throw new Error("メールアドレスを入れてください");
+  if(!password) throw new Error("パスワードを入れてください");
+  if(password.length < 6) throw new Error("パスワードは最低6文字以上にしてください");
+  return { email, password };
+}
+
+async function signInWithPassword(){
   if(!supabaseClient) throw new Error("Supabaseが初期化されていません");
-  const clean = String(email||"").trim();
-  if(!clean) throw new Error("メールアドレスを入れてください");
+  const { email, password } = getAuthInput();
+  const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  if(error) throw error;
+}
+
+async function signUpWithPassword(){
+  if(!supabaseClient) throw new Error("Supabaseが初期化されていません");
+  const { email, password } = getAuthInput();
   const redirectTo = window.location.href.split("#")[0].split("?")[0];
-  const { error } = await supabaseClient.auth.signInWithOtp({
-    email: clean,
+  const { data, error } = await supabaseClient.auth.signUp({
+    email,
+    password,
     options: { emailRedirectTo: redirectTo }
   });
   if(error) throw error;
+  return data;
 }
 
 async function logout(){
@@ -1648,6 +1691,63 @@ async function saveCloudData(showToast=true){
   }
 }
 
+
+let stopwatchElapsedMs = 0;
+let stopwatchStartedAt = null;
+let stopwatchTimer = null;
+
+function currentStopwatchMs(){
+  return stopwatchElapsedMs + (stopwatchStartedAt ? Date.now() - stopwatchStartedAt : 0);
+}
+
+function formatStopwatch(ms){
+  const total = Math.floor(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return [h,m,s].map(x=>String(x).padStart(2,"0")).join(":");
+}
+
+function renderStopwatch(){
+  const el = document.getElementById("timerDisplay");
+  if(el) el.textContent = formatStopwatch(currentStopwatchMs());
+}
+
+function startStopwatch(){
+  if(stopwatchStartedAt) return;
+  stopwatchStartedAt = Date.now();
+  clearInterval(stopwatchTimer);
+  stopwatchTimer = setInterval(renderStopwatch, 500);
+  renderStopwatch();
+}
+
+function pauseStopwatch(){
+  if(!stopwatchStartedAt) return;
+  stopwatchElapsedMs += Date.now() - stopwatchStartedAt;
+  stopwatchStartedAt = null;
+  clearInterval(stopwatchTimer);
+  stopwatchTimer = null;
+  renderStopwatch();
+}
+
+function resetStopwatch(){
+  stopwatchElapsedMs = 0;
+  stopwatchStartedAt = null;
+  clearInterval(stopwatchTimer);
+  stopwatchTimer = null;
+  renderStopwatch();
+}
+
+function applyStopwatchToMinutes(){
+  const ms = currentStopwatchMs();
+  if(ms <= 0){ alert("まだ時間が測られていません。"); return; }
+  const seconds = Math.round(ms / 1000);
+  const minutes = Math.max(1, Math.ceil(seconds / 60));
+  const input = document.getElementById("recMinutes");
+  if(input) input.value = minutes;
+  toast(`${minutes}分を時間欄に反映しました`);
+}
+
 document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>switchTab(t.dataset.tab));
 const dailyAnalysisModeEl = document.getElementById("dailyAnalysisMode");
 if(dailyAnalysisModeEl){
@@ -1738,6 +1838,7 @@ document.getElementById("recordForm").onsubmit=e=>{
   document.getElementById("recFocus").value=3;
   document.getElementById("recWeak").value="ok";
   document.getElementById("recAutoReview").checked=true;
+  resetStopwatch();
   render(); toast("記録しました");
 };
 
@@ -1778,19 +1879,41 @@ document.getElementById("resetAll").onclick=()=>{
 
 const loginForm = document.getElementById("loginForm");
 if(loginForm){
-  loginForm.onsubmit = async e => {
-    e.preventDefault();
-    try{
-      await sendLoginLink(document.getElementById("loginEmail").value);
-      toast("ログインリンクを送信しました");
-      alert("メールを確認して、Supabaseから届いたログインリンクを開いてください。届かない場合は迷惑メールとRedirect URL設定を確認してください。");
-    }catch(err){
-      alert("ログインリンク送信に失敗しました："+(err.message||err));
-    }
-  };
+  loginForm.onsubmit = e => e.preventDefault();
 }
+const signInBtn = document.getElementById("signInBtn");
+if(signInBtn) signInBtn.onclick = async () => {
+  try{
+    await signInWithPassword();
+    toast("ログインしました");
+  }catch(err){
+    alert("ログインに失敗しました："+(err.message||err));
+  }
+};
+const signUpBtn = document.getElementById("signUpBtn");
+if(signUpBtn) signUpBtn.onclick = async () => {
+  try{
+    const data = await signUpWithPassword();
+    if(data?.session){
+      toast("アカウントを作成してログインしました");
+    } else {
+      alert("アカウント作成を受け付けました。確認メールが届いた場合は、メール内のリンクを開いてからログインしてください。確認メールが不要な設定なら、そのままログインできます。");
+    }
+  }catch(err){
+    alert("アカウント作成に失敗しました："+(err.message||err));
+  }
+};
 const logoutBtn = document.getElementById("logoutBtn");
 if(logoutBtn) logoutBtn.onclick = async ()=>{ try{ await logout(); }catch(e){ alert("ログアウトに失敗しました："+(e.message||e)); } };
+["timerStart","timerPause","timerReset","timerApply"].forEach(id=>{
+  const el = document.getElementById(id);
+  if(!el) return;
+  if(id==="timerStart") el.onclick = startStopwatch;
+  if(id==="timerPause") el.onclick = pauseStopwatch;
+  if(id==="timerReset") el.onclick = resetStopwatch;
+  if(id==="timerApply") el.onclick = applyStopwatchToMinutes;
+});
+renderStopwatch();
 ["loadCloudBtn","loadCloudBtn2"].forEach(x=>{ const b=document.getElementById(x); if(b) b.onclick=()=>loadCloudDataManual(); });
 ["saveCloudBtn","saveCloudBtn2"].forEach(x=>{ const b=document.getElementById(x); if(b) b.onclick=()=>saveCloudData(true); });
 
