@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>学習負荷プランナー v0.4.1</title>
+  <title>学習負荷プランナー v0.5</title>
   <style>
     :root {
       --bg: #f7f3ee;
@@ -160,16 +160,27 @@
     .material-mini-list { display:grid; gap:7px; }
     .material-mini-row { display:grid; grid-template-columns:minmax(90px, 1fr) 2fr 70px; gap:8px; align-items:center; font-size:12px; color:var(--muted); }
     @media (max-width: 620px) { .material-mini-row { grid-template-columns:1fr; } }
+
+    .auth-card { margin: 8px 0 14px; }
+    .auth-top { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; flex-wrap:wrap; }
+    .auth-form { display:flex; gap:8px; flex-wrap:wrap; align-items:end; }
+    .auth-form label { min-width:260px; }
+    .auth-status { display:inline-flex; align-items:center; gap:7px; border:1px solid var(--line); background:rgba(255,255,255,.72); padding:8px 10px; border-radius:999px; color:var(--muted); font-size:12px; font-weight:850; }
+    .dot { width:9px; height:9px; border-radius:50%; background:var(--bad); display:inline-block; }
+    .dot.good { background:var(--good); }
+    .cloud-line { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+    .cloud-pill { border-radius:999px; padding:5px 9px; font-size:12px; font-weight:850; background:#f1e8df; color:#5b4a3c; }
   </style>
 </head>
 <body>
   <header>
     <div class="head">
       <div>
-        <h1>学習負荷プランナー v0.4.1</h1>
-        <p class="sub">数字だけの範囲指定・今日やること・教材別分析・日付変更時刻・教材別詳細に対応。</p>
+        <h1>学習負荷プランナー v0.5</h1>
+        <p class="sub">ログイン・クラウド保存・数字だけの範囲指定・教材別分析・日付変更時刻に対応。</p>
       </div>
       <div class="actions">
+        <span class="auth-status" id="cloudStatus"><span class="dot" id="cloudDot"></span><span id="cloudStatusText">未ログイン</span></span>
         <button class="secondary" id="exportTop">バックアップ</button>
         <label class="filebtn secondary" for="importTop">読み込み</label>
         <input type="file" id="importTop" accept=".json,application/json">
@@ -178,6 +189,32 @@
   </header>
 
   <main>
+    <section class="card auth-card" id="authPanel">
+      <div class="auth-top">
+        <div>
+          <h2>ログイン / クラウド保存</h2>
+          <p class="small" id="authHelp">メールアドレスでログインすると、教材・記録・タスクをSupabaseに保存できます。初回ログイン時、クラウドにデータがなければ今のローカルデータをアップロードします。</p>
+          <div class="cloud-line">
+            <span class="cloud-pill" id="userEmailPill">未ログイン</span>
+            <span class="cloud-pill" id="cloudLastSaved">クラウド未同期</span>
+          </div>
+        </div>
+        <form class="auth-form" id="loginForm">
+          <label>メールアドレス
+            <input id="loginEmail" type="email" autocomplete="email" placeholder="you@example.com">
+          </label>
+          <button type="submit">ログインリンクを送る</button>
+          <button type="button" class="secondary" id="logoutBtn">ログアウト</button>
+        </form>
+      </div>
+      <div class="divider"></div>
+      <div class="actions">
+        <button class="secondary" id="loadCloudBtn">クラウドから読み込み</button>
+        <button class="secondary" id="saveCloudBtn">今のデータをクラウドへ保存</button>
+      </div>
+      <p class="small" style="margin-top:8px;">ログインリンクが届かない場合は、SupabaseのAuthentication → URL ConfigurationにGitHub PagesのURLが入っているか確認してください。</p>
+    </section>
+
     <nav class="tabs">
       <button class="tab active" data-tab="today">今日</button>
       <button class="tab" data-tab="analysis">分析</button>
@@ -463,6 +500,19 @@
           <p class="small" id="boundaryHelp" style="margin-top:8px;"></p>
         </div>
 
+
+        <div class="card span-12">
+          <h2>クラウド同期</h2>
+          <div class="notice">
+            ログイン中は、アプリ内で保存が発生するとローカル保存に加えてクラウドにも自動保存します。通信が不安定な時のために、バックアップ書き出しは残しています。
+          </div>
+          <div class="divider"></div>
+          <div class="actions">
+            <button class="secondary" id="loadCloudBtn2">クラウドから読み込み</button>
+            <button class="secondary" id="saveCloudBtn2">今のデータをクラウドへ保存</button>
+          </div>
+          <p class="small" id="cloudDetailText" style="margin-top:8px;">未ログインです。</p>
+        </div>
         <div class="card span-6">
           <h2>データ管理</h2>
           <div class="notice bad">
@@ -486,8 +536,8 @@
         <div class="card span-12">
           <h2>最終的にiPhoneで安定運用するなら</h2>
           <div class="notice">
-            現実的な順番は、①このHTML版で機能を固める → ②GitHub Pages等でiPhoneのホーム画面から開けるようにする → ③Firebase/Supabaseでクラウド保存を付ける、です。<br>
-            データ消失を本当に避けるなら、ログインは「面倒だけど必要」です。Apple/Googleログインにすれば、パスワード登録よりは楽にできます。
+            この版はSupabaseログインとクラウド保存に対応しています。GitHub Pagesなどに置いたあと、SupabaseのAuthentication → URL Configurationに公開URLを登録してください。<br>
+            クラウド保存中でも、念のため定期的なバックアップ書き出しは残しておくのが安全です。
           </div>
         </div>
       </div>
@@ -496,9 +546,13 @@
 
   <div id="toast" class="toast"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-const KEY = "study-load-planner-v04";
-const OLD_KEY = "study-load-planner-v03";
+const SUPABASE_URL = "https://xowbuznsmhgwtjejgzsj.supabase.co";
+const SUPABASE_KEY = "sb_publishable_dwwnnDrLB0XO9F78f2lXqg_CUblib7f";
+const KEY = "study-load-planner-v05";
+const OLD_KEY = "study-load-planner-v04";
+const OLD_KEY1 = "study-load-planner-v03";
 const OLD_KEY2 = "study-load-planner-v02";
 const REVIEW_OFFSETS = [1,3,7,14];
 const diffMul = {1:.75,2:.88,3:1,4:1.25,5:1.55};
@@ -511,10 +565,16 @@ const modeMul = {normal:1, light:.6, minimum:.3, rest:0};
 
 let state = load();
 let selectedMaterialId = null;
+let supabaseClient = null;
+let currentUser = null;
+let cloudSaveTimer = null;
+let isApplyingCloudData = false;
+let lastCloudSavedAt = null;
+let lastCloudLoadedAt = null;
 
 function defaultState(){
   return {
-    version:4,
+    version:5,
     materials:[],
     records:[],
     tasks:[],
@@ -530,7 +590,7 @@ function defaultState(){
 
 function load(){
   try{
-    const raw = localStorage.getItem(KEY) || localStorage.getItem(OLD_KEY) || localStorage.getItem(OLD_KEY2);
+    const raw = localStorage.getItem(KEY) || localStorage.getItem(OLD_KEY) || localStorage.getItem(OLD_KEY1) || localStorage.getItem(OLD_KEY2);
     if(!raw) return defaultState();
     const s = JSON.parse(raw);
     const d = defaultState();
@@ -548,7 +608,41 @@ function load(){
   }
 }
 
-function save(){ localStorage.setItem(KEY, JSON.stringify(state)); }
+function saveLocalOnly(){
+  state.version = 5;
+  localStorage.setItem(KEY, JSON.stringify(state));
+}
+
+function save(){
+  saveLocalOnly();
+  scheduleCloudSave();
+}
+
+function hasMeaningfulData(data=state){
+  return Boolean((data.materials&&data.materials.length) || (data.records&&data.records.length) || (data.tasks&&data.tasks.length));
+}
+
+function normalizeStateData(data){
+  const d = defaultState();
+  const s = data && typeof data === "object" ? data : {};
+  return {
+    ...d,
+    ...s,
+    version:5,
+    materials:Array.isArray(s.materials)?s.materials:[],
+    records:Array.isArray(s.records)?s.records:[],
+    tasks:Array.isArray(s.tasks)?s.tasks:[],
+    settings:{
+      ...d.settings,
+      ...(s.settings||{}),
+      capacities:{...d.settings.capacities, ...((s.settings||{}).capacities||{})},
+      todayModes:{...((s.settings||{}).todayModes||{})},
+      dayBoundaryHour:Number((s.settings||{}).dayBoundaryHour ?? d.settings.dayBoundaryHour),
+      analysisDailyMode:(s.settings||{}).analysisDailyMode || d.settings.analysisDailyMode
+    },
+    createdAt:s.createdAt || new Date().toISOString()
+  };
+}
 function id(p){ return p+"-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8); }
 function today(){
   const d = new Date();
@@ -846,6 +940,7 @@ function render(){
   renderRecords();
   renderTasks();
   renderSettings();
+  updateAuthUI();
 }
 
 function renderOptions(){
@@ -1371,7 +1466,7 @@ function exportData(){
   const blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a");
-  a.href=url; a.download=`study-load-planner-v04-backup-${today()}.json`;
+  a.href=url; a.download=`study-load-planner-v05-backup-${today()}.json`;
   document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   toast("バックアップを書き出しました");
 }
@@ -1384,11 +1479,173 @@ function importData(file){
       const imported=JSON.parse(reader.result);
       if(!Array.isArray(imported.materials)||!Array.isArray(imported.records)) throw new Error("invalid");
       if(!confirm("現在のデータをバックアップ内容で置き換えます。よろしいですか？")) return;
-      state={...defaultState(), ...imported, settings:{...defaultState().settings, ...(imported.settings||{}), capacities:{...defaultState().settings.capacities, ...((imported.settings||{}).capacities||{})}, todayModes:{...((imported.settings||{}).todayModes||{})}}};
+      state=normalizeStateData(imported);
       save(); render(); toast("読み込みました");
     }catch(e){ alert("読み込みに失敗しました。v0.2/v0.3/v0.4のJSONバックアップか確認してください。"); }
   };
   reader.readAsText(file);
+}
+
+
+async function initCloud(){
+  if(!window.supabase || !window.supabase.createClient){
+    updateAuthUI("Supabaseライブラリを読み込めませんでした。ネット接続を確認してください。");
+    return;
+  }
+  try{
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+      auth: { persistSession:true, autoRefreshToken:true, detectSessionInUrl:true }
+    });
+    const { data, error } = await supabaseClient.auth.getSession();
+    if(error) throw error;
+    currentUser = data?.session?.user || null;
+    updateAuthUI();
+    if(currentUser){
+      await autoLoadOrCreateCloudData();
+    }
+    supabaseClient.auth.onAuthStateChange(async (event, session)=>{
+      currentUser = session?.user || null;
+      updateAuthUI();
+      if(event === "SIGNED_IN" && currentUser){
+        toast("ログインしました");
+        await autoLoadOrCreateCloudData();
+      }
+      if(event === "SIGNED_OUT"){
+        toast("ログアウトしました");
+        updateAuthUI();
+      }
+    });
+  }catch(e){
+    console.error(e);
+    updateAuthUI("クラウド初期化エラー："+(e.message||e));
+  }
+}
+
+function updateAuthUI(message){
+  const email = currentUser?.email || "";
+  const loggedIn = Boolean(currentUser);
+  const statusText = document.getElementById("cloudStatusText");
+  const dot = document.getElementById("cloudDot");
+  const pill = document.getElementById("userEmailPill");
+  const last = document.getElementById("cloudLastSaved");
+  const detail = document.getElementById("cloudDetailText");
+  const logout = document.getElementById("logoutBtn");
+  const loadBtn = document.getElementById("loadCloudBtn");
+  const saveBtn = document.getElementById("saveCloudBtn");
+  const loadBtn2 = document.getElementById("loadCloudBtn2");
+  const saveBtn2 = document.getElementById("saveCloudBtn2");
+  if(statusText) statusText.textContent = loggedIn ? "クラウド同期ON" : "未ログイン";
+  if(dot) dot.classList.toggle("good", loggedIn);
+  if(pill) pill.textContent = loggedIn ? email : "未ログイン";
+  if(last) last.textContent = lastCloudSavedAt ? `最終保存 ${lastCloudSavedAt}` : (lastCloudLoadedAt ? `最終読込 ${lastCloudLoadedAt}` : "クラウド未同期");
+  if(detail) detail.textContent = message || (loggedIn ? `ログイン中：${email}。保存時にクラウドへ自動同期します。` : "未ログインです。メールリンクでログインしてください。");
+  [logout, loadBtn, saveBtn, loadBtn2, saveBtn2].forEach(btn=>{ if(btn) btn.disabled = !loggedIn; });
+}
+
+async function sendLoginLink(email){
+  if(!supabaseClient) throw new Error("Supabaseが初期化されていません");
+  const clean = String(email||"").trim();
+  if(!clean) throw new Error("メールアドレスを入れてください");
+  const redirectTo = window.location.href.split("#")[0].split("?")[0];
+  const { error } = await supabaseClient.auth.signInWithOtp({
+    email: clean,
+    options: { emailRedirectTo: redirectTo }
+  });
+  if(error) throw error;
+}
+
+async function logout(){
+  if(!supabaseClient) return;
+  const { error } = await supabaseClient.auth.signOut();
+  if(error) throw error;
+  currentUser = null;
+  updateAuthUI();
+}
+
+function scheduleCloudSave(){
+  if(isApplyingCloudData || !currentUser || !supabaseClient) return;
+  clearTimeout(cloudSaveTimer);
+  cloudSaveTimer = setTimeout(()=>saveCloudData(false), 900);
+}
+
+async function fetchCloudRow(){
+  const { data, error } = await supabaseClient
+    .from("study_planner_data")
+    .select("data, updated_at")
+    .eq("user_id", currentUser.id)
+    .maybeSingle();
+  if(error) throw error;
+  return data;
+}
+
+async function autoLoadOrCreateCloudData(){
+  if(!currentUser || !supabaseClient) return;
+  try{
+    updateAuthUI("クラウドデータを確認中...");
+    const row = await fetchCloudRow();
+    if(row && row.data && hasMeaningfulData(row.data)){
+      // ローカルの退避を残してから、クラウドを正として読み込む
+      localStorage.setItem(KEY+"-before-cloud-load", JSON.stringify(state));
+      isApplyingCloudData = true;
+      state = normalizeStateData(row.data);
+      state._cloudUpdatedAt = row.updated_at;
+      lastCloudLoadedAt = new Date().toLocaleString("ja-JP", {hour12:false});
+      saveLocalOnly();
+      isApplyingCloudData = false;
+      render();
+      toast("クラウドから読み込みました");
+    } else {
+      await saveCloudData(true);
+      toast("ローカルデータをクラウドに初期保存しました");
+    }
+  }catch(e){
+    console.error(e);
+    updateAuthUI("クラウド読込エラー："+(e.message||e));
+    toast("クラウド読込に失敗しました");
+  }
+}
+
+async function loadCloudDataManual(){
+  if(!currentUser) { alert("先にログインしてください。"); return; }
+  if(hasMeaningfulData(state) && !confirm("クラウドの内容でこの端末の表示を置き換えます。現在のローカルデータは退避されます。よろしいですか？")) return;
+  try{
+    const row = await fetchCloudRow();
+    if(!row || !row.data){ alert("クラウドに保存データがありません。先に保存してください。"); return; }
+    localStorage.setItem(KEY+"-before-manual-cloud-load", JSON.stringify(state));
+    isApplyingCloudData = true;
+    state = normalizeStateData(row.data);
+    state._cloudUpdatedAt = row.updated_at;
+    lastCloudLoadedAt = new Date().toLocaleString("ja-JP", {hour12:false});
+    saveLocalOnly();
+    isApplyingCloudData = false;
+    render();
+    toast("クラウドから読み込みました");
+  }catch(e){
+    console.error(e);
+    alert("クラウド読み込みに失敗しました："+(e.message||e));
+  }
+}
+
+async function saveCloudData(showToast=true){
+  if(!currentUser || !supabaseClient) { if(showToast) alert("先にログインしてください。"); return; }
+  try{
+    const payload = normalizeStateData({...state, _cloudUpdatedAt: undefined});
+    const { data, error } = await supabaseClient
+      .from("study_planner_data")
+      .upsert({ user_id: currentUser.id, data: payload }, { onConflict: "user_id" })
+      .select("updated_at")
+      .single();
+    if(error) throw error;
+    lastCloudSavedAt = new Date().toLocaleString("ja-JP", {hour12:false});
+    if(data?.updated_at) state._cloudUpdatedAt = data.updated_at;
+    saveLocalOnly();
+    updateAuthUI();
+    if(showToast) toast("クラウドに保存しました");
+  }catch(e){
+    console.error(e);
+    updateAuthUI("クラウド保存エラー："+(e.message||e));
+    if(showToast) alert("クラウド保存に失敗しました："+(e.message||e));
+  }
 }
 
 document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>switchTab(t.dataset.tab));
@@ -1519,7 +1776,26 @@ document.getElementById("resetAll").onclick=()=>{
   state=defaultState(); save(); render(); toast("全データを削除しました");
 };
 
+const loginForm = document.getElementById("loginForm");
+if(loginForm){
+  loginForm.onsubmit = async e => {
+    e.preventDefault();
+    try{
+      await sendLoginLink(document.getElementById("loginEmail").value);
+      toast("ログインリンクを送信しました");
+      alert("メールを確認して、Supabaseから届いたログインリンクを開いてください。届かない場合は迷惑メールとRedirect URL設定を確認してください。");
+    }catch(err){
+      alert("ログインリンク送信に失敗しました："+(err.message||err));
+    }
+  };
+}
+const logoutBtn = document.getElementById("logoutBtn");
+if(logoutBtn) logoutBtn.onclick = async ()=>{ try{ await logout(); }catch(e){ alert("ログアウトに失敗しました："+(e.message||e)); } };
+["loadCloudBtn","loadCloudBtn2"].forEach(x=>{ const b=document.getElementById(x); if(b) b.onclick=()=>loadCloudDataManual(); });
+["saveCloudBtn","saveCloudBtn2"].forEach(x=>{ const b=document.getElementById(x); if(b) b.onclick=()=>saveCloudData(true); });
+
 render();
+initCloud();
 </script>
 </body>
 </html>
