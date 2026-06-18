@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>学習負荷プランナー v0.5.5</title>
+  <title>学習負荷プランナー v0.5.8</title>
   <style>
     :root {
       --bg: #f7f3ee;
@@ -356,8 +356,8 @@
   <header>
     <div class="head">
       <div>
-        <h1>学習負荷プランナー v0.5.5</h1>
-        <p class="sub">タイマー復元、ダークテーマの視認性改善、週別グラフ、更新履歴タブに対応。</p>
+        <h1>学習負荷プランナー v0.5.8</h1>
+        <p class="sub">計画対象/自由記録教材、期限なし、自由記録の範囲なし、分析の合計/内訳切り替えに対応。</p>
       </div>
       <div class="actions">
         <span class="auth-status" id="cloudStatus"><span class="dot" id="cloudDot"></span><span id="cloudStatusText">未ログイン</span></span>
@@ -751,7 +751,7 @@
         <div class="card span-12">
           <h2>今回のアップデート内容</h2>
           <div class="notice good">
-            v0.5.5では、データ保存方式は変えずに、タイマーの途中状態だけを端末内に一時保存するようにしました。更新前には念のためバックアップを書き出してください。
+            v0.5.4では、データ保存方式は変えずに、表示と分析まわりだけを中心に修正しています。更新前には念のためバックアップを書き出してください。
           </div>
         </div>
         <div class="card span-12">
@@ -782,7 +782,7 @@
         <div class="card span-12">
           <h2>データ保護メモ</h2>
           <div class="notice">
-            このアップデートではSupabaseのテーブル構成や保存先は変更していません。タイマーの途中状態は端末内だけに一時保存し、教材・記録・タスクの既存データ構造は変更しません。
+            このアップデートではSupabaseのテーブル構成や保存先は変更していません。既存データには、週別グラフ用の設定値だけを追加します。
             ただし、アップデート前と本番差し替え前には、あなたと彼氏の両方でバックアップを書き出してください。
           </div>
         </div>
@@ -813,6 +813,7 @@ const modeMul = {normal:1, light:.6, minimum:.3, rest:0};
 let state = load();
 let selectedMaterialId = null;
 let supabaseClient = null;
+let cloudInitPromise = null;
 let currentUser = null;
 let cloudSaveTimer = null;
 let isApplyingCloudData = false;
@@ -1738,7 +1739,7 @@ function exportData(){
   const blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a");
-  a.href=url; a.download=`study-load-planner-v054-backup-${today()}.json`;
+  a.href=url; a.download=`study-load-planner-v056-backup-${today()}.json`;
   document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   toast("バックアップを書き出しました");
 }
@@ -1759,38 +1760,86 @@ function importData(file){
 }
 
 
-async function initCloud(){
-  if(!window.supabase || !window.supabase.createClient){
-    updateAuthUI("Supabaseライブラリを読み込めませんでした。ネット接続を確認してください。");
-    return;
+function sleep(ms){ return new Promise(resolve => setTimeout(resolve, ms)); }
+
+function loadExternalScript(src){
+  return new Promise((resolve, reject)=>{
+    const existing = Array.from(document.scripts).find(s => s.src === src);
+    if(existing){
+      existing.addEventListener("load", resolve, { once:true });
+      existing.addEventListener("error", reject, { once:true });
+      if(window.supabase && window.supabase.createClient) resolve();
+      return;
+    }
+    const s = document.createElement("script");
+    s.src = src;
+    s.async = true;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error("外部ライブラリを読み込めませんでした"));
+    document.head.appendChild(s);
+  });
+}
+
+async function waitForSupabaseLibrary(){
+  for(let i=0; i<25; i++){
+    if(window.supabase && window.supabase.createClient) return true;
+    await sleep(120);
   }
   try{
-    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-      auth: { persistSession:true, autoRefreshToken:true, detectSessionInUrl:true }
-    });
-    const { data, error } = await supabaseClient.auth.getSession();
-    if(error) throw error;
-    currentUser = data?.session?.user || null;
-    updateAuthUI();
-    if(currentUser){
-      await autoLoadOrCreateCloudData();
+    await loadExternalScript("https://unpkg.com/@supabase/supabase-js@2");
+  }catch(e){
+    console.warn("Supabase fallback load failed", e);
+  }
+  for(let i=0; i<15; i++){
+    if(window.supabase && window.supabase.createClient) return true;
+    await sleep(120);
+  }
+  return false;
+}
+
+async function initCloud(){
+  if(supabaseClient) return supabaseClient;
+  if(cloudInitPromise) return cloudInitPromise;
+  cloudInitPromise = (async()=>{
+    const ok = await waitForSupabaseLibrary();
+    if(!ok){
+      updateAuthUI("Supabaseライブラリを読み込めませんでした。ネット接続を確認して再読み込みしてください。", "bad");
+      cloudInitPromise = null;
+      return null;
     }
-    supabaseClient.auth.onAuthStateChange(async (event, session)=>{
-      currentUser = session?.user || null;
+    try{
+      supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+        auth: { persistSession:true, autoRefreshToken:true, detectSessionInUrl:true }
+      });
+      const { data, error } = await supabaseClient.auth.getSession();
+      if(error) throw error;
+      currentUser = data?.session?.user || null;
       updateAuthUI();
-      if(event === "SIGNED_IN" && currentUser){
-        toast("ログインしました");
+      if(currentUser){
         await autoLoadOrCreateCloudData();
       }
-      if(event === "SIGNED_OUT"){
-        toast("ログアウトしました");
+      supabaseClient.auth.onAuthStateChange(async (event, session)=>{
+        currentUser = session?.user || null;
         updateAuthUI();
-      }
-    });
-  }catch(e){
-    console.error(e);
-    updateAuthUI("クラウド初期化エラー："+(e.message||e));
-  }
+        if(event === "SIGNED_IN" && currentUser){
+          toast("ログインしました");
+          await autoLoadOrCreateCloudData();
+        }
+        if(event === "SIGNED_OUT"){
+          toast("ログアウトしました");
+          updateAuthUI();
+        }
+      });
+      return supabaseClient;
+    }catch(e){
+      console.error(e);
+      updateAuthUI("クラウド初期化エラー："+(e.message||e), "bad");
+      supabaseClient = null;
+      cloudInitPromise = null;
+      return null;
+    }
+  })();
+  return cloudInitPromise;
 }
 
 function setAuthMessage(message, kind=""){
@@ -1850,14 +1899,16 @@ function getAuthInput(){
 }
 
 async function signInWithPassword(){
-  if(!supabaseClient) throw new Error("Supabaseが初期化されていません");
+  if(!supabaseClient) await initCloud();
+  if(!supabaseClient) throw new Error("Supabaseを読み込めませんでした。ネット接続を確認して、ページを再読み込みしてください");
   const { email, password } = getAuthInput();
   const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
   if(error) throw error;
 }
 
 async function signUpWithPassword(){
-  if(!supabaseClient) throw new Error("Supabaseが初期化されていません");
+  if(!supabaseClient) await initCloud();
+  if(!supabaseClient) throw new Error("Supabaseを読み込めませんでした。ネット接続を確認して、ページを再読み込みしてください");
   const { email, password } = getAuthInput();
   const redirectTo = window.location.href.split("#")[0].split("?")[0];
   const { data, error } = await supabaseClient.auth.signUp({
@@ -2797,6 +2848,1113 @@ initCloud();
   attachPatchEvents();
   state = normalizeStateData(state);
   render();
+})();
+</script>
+
+<script>
+/* v0.5.6 patch: optional/free-record materials, no deadline, no range for optional materials, analysis scope filter */
+(function(){
+  const VERSION_056 = 5.6;
+
+  function materialPlanningMode(m){ return m?.planningMode === "optional" ? "optional" : "scheduled"; }
+  function isOptionalMaterial(m){ return materialPlanningMode(m) === "optional"; }
+  function isScheduledMaterial(m){ return !isOptionalMaterial(m); }
+  function isNoDeadlineMaterial(m){ return Boolean(m?.noDeadline || !m?.deadline); }
+  function isNoRangeMaterial(m){ return m?.rangeMode === "none"; }
+  function displayDeadline(m){ return isNoDeadlineMaterial(m) ? "期限なし" : (m?.deadline || "期限なし"); }
+  function displayRange(m){ return isNoRangeMaterial(m) ? "範囲なし" : (rangesToText(m?.ranges||[], m?.unitLabel) || "なし"); }
+  function effectiveDeadline(m, ref=today()){
+    if(isNoDeadlineMaterial(m)) return addDays(ref, 29);
+    return m.deadline;
+  }
+  function scopeLabel(scope){ return scope === "scheduled" ? "計画対象" : scope === "optional" ? "プラスα" : "合計"; }
+  function recordScope(r){ const m = mat(r.materialId); return isOptionalMaterial(m) ? "optional" : "scheduled"; }
+  function filterRecordsByScope(recs, scope){
+    if(scope === "scheduled") return recs.filter(r=>recordScope(r)==="scheduled");
+    if(scope === "optional") return recs.filter(r=>recordScope(r)==="optional");
+    return recs;
+  }
+
+
+  // v0.5.8 compatibility: v0.5.6 renderAnalysis used this function but it was scoped inside the v0.5.5 patch.
+  // Keep a local copy here so the graph renders before the v0.5.8 override also runs.
+  function renderVerticalChart(el, rows, emptyText){
+    if(!el) return;
+    const safeRows = Array.isArray(rows) ? rows : [];
+    const max = Math.max(1, ...safeRows.map(r=>Number(r.minutes||0)));
+    if(!safeRows.some(r=>Number(r.minutes||0)>0)){
+      el.innerHTML = `<div class="empty">${emptyText}</div>`;
+      return;
+    }
+    el.innerHTML = `<div class="vchart-axis-label">縦軸：勉強時間 / 横軸：曜日・月・日付</div><div class="vchart"></div>`;
+    const chart = el.querySelector(".vchart");
+    safeRows.forEach(r=>{
+      const minutes = Number(r.minutes||0);
+      const h = Math.max(3, Math.round(minutes/max*190));
+      const col=document.createElement("div");
+      col.className="vbar-col";
+      col.innerHTML = `<div class="vbar-value">${minutes?fmtMin(minutes):""}</div><div class="vbar" style="height:${h}px"></div><div class="vbar-label">${esc(r.label||"")}</div>`;
+      chart.appendChild(col);
+    });
+  }
+  function normalizeMaterialData(m){
+    const src = m && typeof m === "object" ? m : {};
+    const noDeadline = Boolean(src.noDeadline || !src.deadline);
+    const rangeMode = src.rangeMode === "none" ? "none" : "ranged";
+    return {
+      ...src,
+      planningMode: src.planningMode === "optional" ? "optional" : "scheduled",
+      rangeMode,
+      noDeadline,
+      deadline: noDeadline ? null : src.deadline,
+      ranges: Array.isArray(src.ranges) ? src.ranges : [],
+      priority: src.priority || "normal",
+      defaultDifficulty: Number(src.defaultDifficulty || 3),
+      baseMinutes: Number(src.baseMinutes || 6)
+    };
+  }
+
+  function ensureV056Dom(){
+    document.title = "学習負荷プランナー v0.5.8";
+    const h1 = document.querySelector("h1");
+    if(h1) h1.textContent = "学習負荷プランナー v0.5.8";
+    const sub = document.querySelector("header .sub");
+    if(sub) sub.textContent = "分析グラフ修正、プラスα記録の種類非表示、範囲なし教材の入力整理に対応。";
+
+    const categoryEl = document.getElementById("matCategory");
+    if(categoryEl && !document.getElementById("matPlanningMode")){
+      categoryEl.closest("label")?.insertAdjacentHTML("afterend", `
+        <label>教材の扱い
+          <select id="matPlanningMode">
+            <option value="scheduled">計画対象：今日やること・曜日ごとの時間枠に入れる</option>
+            <option value="optional">自由記録のみ：自動計画に入れず、記録と分析だけに使う</option>
+          </select>
+        </label>`);
+    }
+
+    const deadlineEl = document.getElementById("matDeadline");
+    if(deadlineEl){
+      deadlineEl.required = false;
+      const deadlineLabel = deadlineEl.closest("label");
+      if(deadlineLabel && !document.getElementById("matNoDeadline")){
+        deadlineLabel.insertAdjacentHTML("afterend", `<label class="checkline"><input id="matNoDeadline" type="checkbox">期限なし</label>`);
+      }
+    }
+
+    const rangeRows = document.getElementById("rangeRows");
+    if(rangeRows && !document.getElementById("matNoRange")){
+      const block = rangeRows.parentElement;
+      block?.insertAdjacentHTML("afterbegin", `<label class="checkline"><input id="matNoRange" type="checkbox">範囲なし（自由記録教材用）</label>`);
+    }
+
+    const recStart = document.getElementById("recStart");
+    if(recStart){
+      const block = recStart.closest(".row2");
+      if(block && !block.id) block.id = "recordRangeBlock";
+      recStart.required = false;
+      const recEnd = document.getElementById("recEnd");
+      if(recEnd) recEnd.required = false;
+    }
+
+    const analysisControls = document.getElementById("analysisControls");
+    if(analysisControls && !document.getElementById("analysisScopeMode")){
+      analysisControls.insertAdjacentHTML("beforebegin", `
+        <div class="analysis-toolbar" style="margin-top:10px;">
+          <div>
+            <h3 style="margin:0 0 4px;">分析対象</h3>
+            <p class="small">合計・計画対象のみ・プラスαのみを切り替えられます。</p>
+          </div>
+          <div class="segmented" id="analysisScopeMode">
+            <button type="button" data-scope="total" class="active">合計</button>
+            <button type="button" data-scope="scheduled">計画対象</button>
+            <button type="button" data-scope="optional">プラスα</button>
+          </div>
+        </div>`);
+    }
+
+    const updates = document.querySelector("#updates .grid");
+    if(updates && !document.getElementById("updateV056Card")){
+      updates.insertAdjacentHTML("afterbegin", `
+        <div class="card span-12" id="updateV056Card">
+          <h2>v0.5.6</h2>
+          <div class="list">
+            <div class="item"><div class="title">教材を「計画対象」と「自由記録のみ」に分類</div><div class="small">自由記録教材は今日やること・曜日ごとの時間枠・自動タスク生成には含めず、記録と分析には反映します。</div></div>
+            <div class="item"><div class="title">期限なしに対応</div><div class="small">計画対象・自由記録のみのどちらでも、期限なし教材を登録できます。期限なし教材は期限警告から外します。</div></div>
+            <div class="item"><div class="title">自由記録教材の範囲なしに対応</div><div class="small">単語・読書・用語確認のように、ページや問題番号で管理しない教材を時間とメモだけで記録できます。</div></div>
+            <div class="item"><div class="title">分析を合計/計画対象/プラスαで切り替え</div><div class="small">全体の勉強時間も、タスク内の勉強とプラスαの勉強の内訳も見られるようにしました。</div></div>
+          </div>
+        </div>`);
+      const topNotice = updates.querySelector(".notice.good");
+      if(topNotice) topNotice.innerHTML = "v0.5.8では、v0.5.7の内容に加えてSupabase初期化の待機・再試行処理を追加しています。Supabaseのテーブル構成は変更していません。";
+      const dataMemo = [...updates.querySelectorAll(".card")].find(c=>c.querySelector("h2")?.textContent.trim()==="データ保護メモ");
+      const memoNotice = dataMemo?.querySelector(".notice");
+      if(memoNotice) memoNotice.innerHTML = "このアップデートではSupabaseのテーブル構成や保存先は変更していません。v0.5.8ではログイン時にSupabaseライブラリの読み込みを待機・再試行するようにしました。更新前と本番差し替え前には、あなたと彼氏の両方でバックアップを書き出してください。";
+    }
+  }
+
+  function updateMaterialConfigUI(){
+    const modeEl = document.getElementById("matPlanningMode");
+    const noRangeEl = document.getElementById("matNoRange");
+    const noDeadlineEl = document.getElementById("matNoDeadline");
+    const deadlineEl = document.getElementById("matDeadline");
+    const optional = modeEl?.value === "optional";
+    if(noRangeEl){
+      noRangeEl.disabled = !optional;
+      if(!optional) noRangeEl.checked = false;
+    }
+    const noRange = Boolean(noRangeEl?.checked);
+    const rangeRows = document.getElementById("rangeRows");
+    const addRangeBtn = document.getElementById("addRangeBtn");
+    const hint = rangeRows?.parentElement?.querySelector(".rangehint");
+    if(rangeRows) rangeRows.style.display = noRange ? "none" : "grid";
+    if(addRangeBtn) addRangeBtn.disabled = noRange;
+    if(hint) hint.textContent = noRange ? "範囲なし教材は、記録時に範囲開始・終了を入力しません。" : "開始番号と終了番号だけ入れる。例：開始 1 / 終了 80。複数範囲も追加可能。";
+    if(deadlineEl && noDeadlineEl){
+      deadlineEl.disabled = noDeadlineEl.checked;
+      deadlineEl.required = false;
+      if(noDeadlineEl.checked) deadlineEl.value = "";
+    }
+  }
+
+  function updateRecordRangeUI(){
+    const m = mat(document.getElementById("recMaterial")?.value);
+    const noRange = isNoRangeMaterial(m);
+    const optional = isOptionalMaterial(m);
+    const block = document.getElementById("recordRangeBlock");
+    const recStart = document.getElementById("recStart");
+    const recEnd = document.getElementById("recEnd");
+    if(block) block.classList.toggle("hidden", noRange);
+    if(recStart){ recStart.required = !noRange; if(noRange) recStart.value = ""; }
+    if(recEnd){ recEnd.required = !noRange; if(noRange) recEnd.value = ""; }
+    const auto = document.getElementById("recAutoReview");
+    if(auto){
+      auto.disabled = optional || noRange;
+      if(optional || noRange) auto.checked = false;
+      else if(auto.checked === false) auto.checked = true;
+    }
+    const notice = document.querySelector("#recordForm .timer-box")?.nextElementSibling;
+    if(noRange && notice?.classList?.contains("row2")){}
+  }
+
+  function startDateForCalcV056(m, ref=today()){
+    if(m?.startDate && m.startDate > ref) return m.startDate;
+    return ref;
+  }
+  function displayStartDateV056(m){ return m?.startDate || "未設定（今日扱い）"; }
+  function isFutureMaterialV056(m, ref=today()){ return Boolean(m?.startDate && m.startDate > ref); }
+  function isStartedMaterialV056(m, ref=today()){ return !isFutureMaterialV056(m, ref); }
+  function capacityBetweenV056(start, end){
+    if(!start || !end) return 0;
+    let sum=0, d=start, guard=0;
+    while(d<=end && guard<900){ sum += capacityForDate(d); d = addDays(d,1); guard++; }
+    return sum;
+  }
+
+  defaultState = function(){
+    return {
+      version:VERSION_056,
+      materials:[], records:[], tasks:[],
+      settings:{
+        capacities:{0:120,1:45,2:60,3:45,4:30,5:90,6:120},
+        todayModes:{}, dayBoundaryHour:4,
+        analysisDailyMode:"material", analysisMode:"week", analysisWeekDate:today(), analysisYear:Number(today().slice(0,4)), analysisStart:addDays(today(),-6), analysisEnd:today(), analysisScope:"total",
+        theme:"standard"
+      },
+      createdAt:new Date().toISOString()
+    };
+  };
+
+  const oldNormalize = normalizeStateData;
+  normalizeStateData = function(data){
+    const d = defaultState();
+    const s = data && typeof data === "object" ? data : {};
+    const old = oldNormalize ? oldNormalize(data) : s;
+    const settings = old.settings || s.settings || {};
+    return {
+      ...d, ...old, version:VERSION_056,
+      materials:Array.isArray(old.materials)?old.materials.map(normalizeMaterialData):[],
+      records:Array.isArray(old.records)?old.records:[],
+      tasks:Array.isArray(old.tasks)?old.tasks:[],
+      settings:{
+        ...d.settings, ...settings,
+        capacities:{...d.settings.capacities, ...(settings.capacities||{})},
+        todayModes:{...(settings.todayModes||{})},
+        dayBoundaryHour:Number(settings.dayBoundaryHour ?? d.settings.dayBoundaryHour),
+        analysisDailyMode:settings.analysisDailyMode || d.settings.analysisDailyMode,
+        analysisMode:settings.analysisMode || d.settings.analysisMode,
+        analysisWeekDate:settings.analysisWeekDate || d.settings.analysisWeekDate,
+        analysisYear:Number(settings.analysisYear || d.settings.analysisYear),
+        analysisStart:settings.analysisStart || d.settings.analysisStart,
+        analysisEnd:settings.analysisEnd || d.settings.analysisEnd,
+        analysisScope:settings.analysisScope || "total",
+        theme:settings.theme || d.settings.theme
+      },
+      createdAt:old.createdAt || s.createdAt || new Date().toISOString()
+    };
+  };
+
+  const oldEnsureSettingsDefaults = typeof ensureSettingsDefaults === "function" ? ensureSettingsDefaults : null;
+  ensureSettingsDefaults = function(){
+    if(oldEnsureSettingsDefaults) oldEnsureSettingsDefaults();
+    if(!state.settings) state.settings = {};
+    if(!state.settings.analysisScope) state.settings.analysisScope = "total";
+    state.materials = (state.materials||[]).map(normalizeMaterialData);
+  };
+
+  saveLocalOnly = function(){
+    state.version = VERSION_056;
+    ensureSettingsDefaults();
+    localStorage.setItem(KEY, JSON.stringify(state));
+  };
+
+  exportData = function(){
+    const blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url; a.download=`study-load-planner-v056-backup-${today()}.json`;
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    toast("バックアップを書き出しました");
+  };
+
+  completedRanges = function(materialId){
+    const m=mat(materialId); if(!m || isNoRangeMaterial(m)) return [];
+    const target=m.ranges||[];
+    const recs=state.records.filter(r=>r.materialId===materialId && r.type==="new" && r.start!=null && r.end!=null);
+    const parts=[];
+    for(const r of recs){
+      const rg={start:Number(r.start),end:Number(r.end)};
+      for(const t of target){ const x=intersect(rg,t); if(x) parts.push(x); }
+    }
+    return mergeRanges(parts);
+  };
+  remainingRanges = function(materialId){
+    const m=mat(materialId); if(!m || isNoRangeMaterial(m)) return [];
+    return subtractRanges(m.ranges||[], completedRanges(materialId));
+  };
+
+  estimate = function(m){
+    const ranged = !isNoRangeMaterial(m);
+    const recs = recordsFor(m.id,"new").filter(r=>r.minutes>0 && ranged && r.start!=null && r.end!=null);
+    let base = Number(m.baseMinutes||6);
+    if(recs.length){
+      const normalized = recs.map(r=>{
+        const units = Math.max(1, Number(r.end)-Number(r.start)+1);
+        return (r.minutes/units)/(diffMul[r.difficulty]||1)/(focusMul[r.focus]||1);
+      });
+      base = avg(normalized) || base;
+    }
+    const allRecs = recordsFor(m.id,"new");
+    const avgDiff = avg(allRecs.map(r=>Number(r.difficulty))) || Number(m.defaultDifficulty||3);
+    const predicted = base * (diffMul[Math.round(avgDiff)] || 1);
+    const targetTotal = ranged ? totalLen(m.ranges||[]) : 0;
+    const done = ranged ? totalLen(completedRanges(m.id)) : 0;
+    const remaining = Math.max(0, targetTotal-done);
+    const remainingMinutes = remaining*predicted;
+    const progress = targetTotal ? done/targetTotal*100 : 0;
+    const start = startDateForCalcV056(m, today());
+    const deadline = effectiveDeadline(m, start);
+    const daysRaw = daysInc(start, deadline);
+    const days = Math.max(1, daysRaw || 0);
+    const requiredPerDay = remainingMinutes/days;
+    return {base,avgDiff,predicted,targetTotal,done,remaining,remainingMinutes,progress,days:daysRaw,planDays:days,requiredPerDay,planStart:start};
+  };
+
+  capacityUntil = function(deadline){ return deadline ? capacityBetweenV056(today(), deadline) : 0; };
+
+  taskEstimate = function(t){
+    const m=mat(t.materialId);
+    if(!m) return t.plannedMinutes || 0;
+    if(t.plannedMinutes) return t.plannedMinutes;
+    const e=estimate(m);
+    const units = Math.max(1, Number(t.end)-Number(t.start)+1);
+    const reviewFactor = t.type==="review" ? .45 : 1;
+    return Math.ceil(units * e.predicted * reviewFactor);
+  };
+
+  taskScore = function(t){
+    const m=mat(t.materialId);
+    const due=t.dueDate;
+    const overdue = due < today() ? 1 : 0;
+    const dueToday = due <= today() ? 1 : 0;
+    const weak = t.weak==="redo" ? 4 : t.weak==="weak" ? 3 : t.weak==="uncertain" ? 2 : 0;
+    const type = t.type==="review" ? 20 : 0;
+    const pr = m ? (m.priority==="high"?6:m.priority==="normal"?3:0) : 0;
+    const days = m && !isNoDeadlineMaterial(m) ? daysInc(today(), m.deadline) : 999;
+    const urgent = Math.max(0, 12-Math.min(days,12));
+    return type + overdue*60 + dueToday*25 + weak*4 + pr + urgent - (taskEstimate(t)/120);
+  };
+
+  makeReviewTasks = function(record){
+    if(record.type!=="new") return;
+    const m=mat(record.materialId); if(!m) return;
+    if(isOptionalMaterial(m) || isNoRangeMaterial(m)) return;
+    for(const offset of REVIEW_OFFSETS){
+      const due=addDays(record.date, offset);
+      if(!isNoDeadlineMaterial(m) && due > m.deadline) continue;
+      state.tasks.push({id:id("task"),type:"review",materialId:record.materialId,start:record.start,end:record.end,dueDate:due,createdForDate:due,sourceRecordId:record.id,weak:record.weak,plannedMinutes:null,done:false,createdAt:new Date().toISOString()});
+    }
+  };
+
+  buildTodayPlan = function(force=false){
+    const date=today();
+    if(force){
+      state.tasks = state.tasks.filter(t => !(t.createdForDate===date && !t.done && t.generated));
+    } else {
+      if(state.tasks.some(t=>t.createdForDate===date && t.generated && isScheduledMaterial(mat(t.materialId)))) return;
+    }
+    const mode=modeForToday();
+    if(mode==="rest"){ save(); return; }
+    const dueUndone = state.tasks.filter(t=>!t.done && t.dueDate<=date && isScheduledMaterial(mat(t.materialId)));
+    const existingMinutes = dueUndone.reduce((s,t)=>s+taskEstimate(t),0);
+    let cap = Math.max(0, todayCapacity() - existingMinutes);
+    const materials = state.materials
+      .filter(m=>isScheduledMaterial(m) && !isNoRangeMaterial(m) && isStartedMaterialV056(m,date))
+      .map(m=>({m,e:estimate(m)}))
+      .filter(x=>x.e.remaining>0)
+      .sort((a,b)=>{
+        const ad = isNoDeadlineMaterial(a.m), bd = isNoDeadlineMaterial(b.m);
+        if(ad !== bd) return ad ? 1 : -1;
+        const da = daysInc(date,effectiveDeadline(a.m,date)), db = daysInc(date,effectiveDeadline(b.m,date));
+        const urgent = da-db;
+        if(urgent!==0) return urgent;
+        return (priorityMul[b.m.priority]||1)-(priorityMul[a.m.priority]||1);
+      });
+    for(const {m,e} of materials){
+      if(cap<=0) break;
+      const remain = remainingRanges(m.id);
+      if(!remain.length) continue;
+      const requiredUnits = Math.max(1, Math.ceil((e.remaining / Math.max(1,e.planDays)) * (priorityMul[m.priority]||1)));
+      const capUnits = Math.max(1, Math.floor(cap / Math.max(1,e.predicted)));
+      const units = Math.min(requiredUnits, capUnits, len(remain[0]));
+      if(units<=0) continue;
+      const start = remain[0].start;
+      const end = start + units - 1;
+      const minutes = Math.ceil(units * e.predicted);
+      state.tasks.push({id:id("task"),type:"new",materialId:m.id,start,end,dueDate:date,createdForDate:date,generated:true,weak:"ok",plannedMinutes:minutes,done:false,createdAt:new Date().toISOString()});
+      cap -= minutes;
+    }
+    save();
+  };
+
+  warnings = function(){
+    const out=[];
+    const ms=state.materials
+      .filter(m=>isScheduledMaterial(m) && !isNoDeadlineMaterial(m) && !isNoRangeMaterial(m))
+      .map(m=>({m,e:estimate(m)}))
+      .filter(x=>x.e.remaining>0);
+    for(const {m,e} of ms){
+      const cap = capacityBetweenV056(e.planStart, m.deadline);
+      if(e.remainingMinutes>cap){
+        const startLabel = m.startDate && m.startDate>today() ? `${m.startDate}開始で` : "今の設定では";
+        out.push({type:"material",material:m,shortage:e.remainingMinutes-cap,message:`${m.name}：${startLabel}期限までに約${fmtMin(e.remainingMinutes-cap)}不足。1日あたり約${fmtMin(e.requiredPerDay)}必要。`});
+      }
+    }
+    return out;
+  };
+
+  function periodRecordsV056(mode){
+    const scope = state.settings.analysisScope || "total";
+    const recs = filterRecordsByScope(state.records || [], scope);
+    if(mode==="week"){
+      const selected = state.settings.analysisWeekDate || today();
+      const base = dateObj(selected);
+      const day = base.getDay();
+      const diff = (day + 6) % 7;
+      base.setDate(base.getDate() - diff);
+      base.setMinutes(base.getMinutes()-base.getTimezoneOffset());
+      const start = base.toISOString().slice(0,10);
+      const days = Array.from({length:7},(_,i)=>addDays(start,i));
+      const labels = ["月","火","水","木","金","土","日"];
+      const rows = days.map((d,i)=>({key:d,label:`${labels[i]} ${d.slice(5).replace("-","/")}`,minutes:recs.filter(r=>r.date===d).reduce((s,r)=>s+Number(r.minutes||0),0)}));
+      return {rows, records:recs.filter(r=>days.includes(r.date)), title:`週別 ${start.replaceAll("-","/")}〜${days[6].replaceAll("-","/")}`, start, end:days[6]};
+    }
+    if(mode==="month"){
+      const y = Number(state.settings.analysisYear || today().slice(0,4));
+      const rows = Array.from({length:12},(_,i)=>{
+        const mm = String(i+1).padStart(2,"0");
+        const minutes = recs.filter(r=>String(r.date||"").startsWith(`${y}-${mm}`)).reduce((s,r)=>s+Number(r.minutes||0),0);
+        return {key:`${y}-${mm}`, label:`${i+1}月`, minutes};
+      });
+      return {rows, records:recs.filter(r=>String(r.date||"").startsWith(`${y}-`)), title:`${y}年 月別`, start:`${y}-01-01`, end:`${y}-12-31`};
+    }
+    const start = state.settings.analysisStart || addDays(today(),-6);
+    const end = state.settings.analysisEnd || today();
+    const days=[];
+    let d=start, guard=0;
+    while(d<=end && guard<370){ days.push(d); d=addDays(d,1); guard++; }
+    const rows = days.map(d=>({key:d,label:d.slice(5).replace("-","/"),minutes:recs.filter(r=>r.date===d).reduce((s,r)=>s+Number(r.minutes||0),0)}));
+    return {rows, records:recs.filter(r=>r.date>=start && r.date<=end), title:`指定期間`, start, end};
+  }
+
+  renderAnalysis = function(){
+    const stats=document.getElementById("analysisStats");
+    if(!stats) return;
+    ensureSettingsDefaults();
+    const scope = state.settings.analysisScope || "total";
+    document.querySelectorAll("#analysisScopeMode button").forEach(b=>b.classList.toggle("active", b.dataset.scope===scope));
+    const all = state.records || [];
+    const allTotal = all.reduce((s,r)=>s+Number(r.minutes||0),0);
+    const allScheduled = filterRecordsByScope(all,"scheduled").reduce((s,r)=>s+Number(r.minutes||0),0);
+    const allOptional = filterRecordsByScope(all,"optional").reduce((s,r)=>s+Number(r.minutes||0),0);
+    const scopedAll = filterRecordsByScope(all, scope);
+    const r7=filterRecordsByScope(recordsInLastDays(7), scope);
+    const r30=filterRecordsByScope(recordsInLastDays(30), scope);
+    const min7=r7.reduce((s,r)=>s+Number(r.minutes||0),0);
+    const min30=r30.reduce((s,r)=>s+Number(r.minutes||0),0);
+    const todayMin=scopedAll.filter(r=>r.date===today()).reduce((s,r)=>s+Number(r.minutes||0),0);
+    const active7=new Set(r7.map(r=>r.date)).size;
+    const avgDiff=avg(r30.map(r=>Number(r.difficulty)))||0;
+    stats.innerHTML=`
+      <div class="statbox"><div class="small">総勉強時間（累計）</div><div class="num">${fmtMin(allTotal)}</div></div>
+      <div class="statbox"><div class="small">計画対象（累計）</div><div class="num">${fmtMin(allScheduled)}</div></div>
+      <div class="statbox"><div class="small">プラスα（累計）</div><div class="num">${fmtMin(allOptional)}</div></div>
+      <div class="statbox"><div class="small">表示中：${scopeLabel(scope)} 今日</div><div class="num">${fmtMin(todayMin)}</div></div>
+      <div class="statbox"><div class="small">表示中：直近7日</div><div class="num">${fmtMin(min7)}</div></div>
+      <div class="statbox"><div class="small">表示中：直近30日</div><div class="num">${fmtMin(min30)}</div></div>
+      <div class="statbox"><div class="small">7日の勉強日数</div><div class="num">${active7}/7日</div></div>
+      <div class="statbox"><div class="small">30日の平均難易度</div><div class="num">${avgDiff?avgDiff.toFixed(1):"-"}</div></div>`;
+
+    const mode = state.settings.analysisMode || "week";
+    document.querySelectorAll("#analysisPeriodMode button").forEach(b=>b.classList.toggle("active", b.dataset.mode===mode));
+    const weekLabel=document.getElementById("analysisWeekLabel"), yearLabel=document.getElementById("analysisYearLabel"), startLabel=document.getElementById("analysisStartLabel"), endLabel=document.getElementById("analysisEndLabel");
+    if(weekLabel) weekLabel.classList.toggle("hidden", mode!=="week");
+    if(yearLabel) yearLabel.classList.toggle("hidden", mode!=="month");
+    if(startLabel) startLabel.classList.toggle("hidden", mode!=="custom");
+    if(endLabel) endLabel.classList.toggle("hidden", mode!=="custom");
+    const weekEl=document.getElementById("analysisWeekDate"); if(weekEl) weekEl.value=state.settings.analysisWeekDate || today();
+    const yearEl=document.getElementById("analysisYear"); if(yearEl) yearEl.value=state.settings.analysisYear || Number(today().slice(0,4));
+    const startEl=document.getElementById("analysisStart"); if(startEl) startEl.value=state.settings.analysisStart || addDays(today(),-6);
+    const endEl=document.getElementById("analysisEnd"); if(endEl) endEl.value=state.settings.analysisEnd || today();
+
+    const pr = periodRecordsV056(mode);
+    renderVerticalChart(document.getElementById("studyTimeChart"), pr.rows, "この期間の記録はまだありません。");
+    const periodMin = pr.records.reduce((s,r)=>s+Number(r.minutes||0),0);
+    const daysWith = new Set(pr.records.map(r=>r.date)).size;
+    const topMat = state.materials.map(m=>({name:m.name, minutes:pr.records.filter(r=>r.materialId===m.id).reduce((s,r)=>s+Number(r.minutes||0),0)})).sort((a,b)=>b.minutes-a.minutes)[0];
+    const sumEl=document.getElementById("analysisPeriodSummary");
+    if(sumEl) sumEl.innerHTML = `<span class="badge blue">${esc(pr.title)}</span><span class="badge">表示 ${esc(scopeLabel(scope))}</span><span class="badge">期間合計 ${fmtMin(periodMin)}</span><span class="badge">勉強日数 ${daysWith}日</span>${topMat&&topMat.minutes?`<span class="badge">最多 ${esc(topMat.name)} ${fmtMin(topMat.minutes)}</span>`:""}`;
+
+    const matRows=state.materials.map(m=>({label:m.name,value:pr.records.filter(r=>r.materialId===m.id).reduce((s,r)=>s+Number(r.minutes||0),0),text:fmtMin(pr.records.filter(r=>r.materialId===m.id).reduce((s,r)=>s+Number(r.minutes||0),0))})).filter(x=>x.value>0).sort((a,b)=>b.value-a.value).slice(0,8);
+    renderBarList(document.getElementById("materialRanking"), matRows, "この期間の教材別記録はまだありません。");
+    const newMin = pr.records.filter(r=>r.type==="new").reduce((s,r)=>s+Number(r.minutes||0),0);
+    const reviewMin = pr.records.filter(r=>r.type==="review").reduce((s,r)=>s+Number(r.minutes||0),0);
+    const typeRows=[{label:"新規", value:newMin, text:fmtMin(newMin)},{label:"復習", value:reviewMin, text:fmtMin(reviewMin)}].filter(x=>x.value>0);
+    renderBarList(document.getElementById("typeBreakdown"), typeRows, "この期間にはまだ記録がありません。");
+    const weak=document.getElementById("weakRecords");
+    if(weak){
+      weak.innerHTML="";
+      const wr=pr.records.filter(r=>r.weak&&r.weak!=="ok").sort((a,b)=>b.date.localeCompare(a.date)).slice(0,10);
+      if(!wr.length) weak.innerHTML='<div class="empty">この期間に苦手フラグのある記録はありません。</div>';
+      else wr.forEach(r=>weak.appendChild(recordItem(r)));
+    }
+  };
+
+  renderOptions = function(){
+    const sel=document.getElementById("recMaterial");
+    if(!sel) return;
+    const prev=sel.value;
+    sel.innerHTML="";
+    if(!state.materials.length){
+      sel.disabled=true;
+      sel.innerHTML='<option value="">先に教材を登録してください</option>';
+    } else {
+      sel.disabled=false;
+      for(const m of state.materials){
+        const o=document.createElement("option");
+        o.value=m.id;
+        o.textContent=`${m.name}${isOptionalMaterial(m)?"（プラスα）":""}${isNoRangeMaterial(m)?"・範囲なし":""}`;
+        sel.appendChild(o);
+      }
+      if(prev && state.materials.some(m=>m.id===prev)) sel.value=prev;
+    }
+    updateRecordRangeUI();
+  };
+
+  renderToday = function(){
+    const date=today();
+    const due = sortedTasks(state.tasks.filter(t=>!t.done && t.dueDate<=date && isScheduledMaterial(mat(t.materialId))));
+    const total = due.reduce((s,t)=>s+taskEstimate(t),0);
+    const carry = due.filter(t=>t.dueDate<date).length;
+    const plusToday = filterRecordsByScope(state.records.filter(r=>r.date===date), "optional").reduce((s,r)=>s+Number(r.minutes||0),0);
+    const w=warnings();
+    document.getElementById("metricToday").textContent=fmtMin(total);
+    document.getElementById("metricTodaySub").textContent=`未完了 ${due.length}件 / プラスα記録 ${fmtMin(plusToday)}`;
+    document.getElementById("metricMode").textContent=modeLabel[modeForToday()];
+    document.getElementById("metricCapacity").textContent=`設定時間 ${fmtMin(capacityForDate(date))} / 反映後 ${fmtMin(todayCapacity())}（プラスαは枠外）`;
+    document.getElementById("metricCarry").textContent=carry+"件";
+    document.getElementById("metricWarnings").textContent=w.length+"件";
+    document.getElementById("todayMode").value=modeForToday();
+    const notice=document.getElementById("todayNotice");
+    if(!due.length){ notice.innerHTML='<div class="notice good">今日の未完了タスクはありません。自由記録教材はここには出ず、記録と分析だけに反映されます。</div>'; }
+    else if(total>todayCapacity() && modeForToday()!=="rest"){ notice.innerHTML=`<div class="notice bad">持ち越し・復習を含めた計画対象タスクが、今日の上限を約${fmtMin(total-todayCapacity())}超えています。プラスα教材はこの上限には含めません。</div>`; }
+    else { notice.innerHTML='<div class="notice good">計画対象教材だけを今日のタスクに出しています。自由記録教材は気が向いた時に記録してください。</div>'; }
+    const list=document.getElementById("todayTasks");
+    list.innerHTML="";
+    if(!due.length) list.innerHTML='<div class="empty">今日やることはまだありません。</div>';
+    else due.forEach((t,i)=>list.appendChild(taskItem(t,i+1)));
+    renderFuturePlans();
+    const wl=document.getElementById("warningsList");
+    wl.innerHTML="";
+    if(!w.length) wl.innerHTML='<div class="empty">今の設定では大きな期限警告はありません。</div>';
+    else w.slice(0,10).forEach(x=>{ const div=document.createElement("div"); div.className="notice bad"; div.textContent=x.message; wl.appendChild(div); });
+  };
+
+  taskItem = function(t,num){
+    const m=mat(t.materialId);
+    const div=document.createElement("div");
+    const overdue=t.dueDate<today();
+    div.className="item";
+    div.innerHTML=`
+      <div class="taskrow"><span class="tasknum">${num}</span><div style="flex:1">
+        <div class="item-head"><div><div class="title">${esc(m?m.name:"削除済み教材")}</div><div class="small">${t.type==="new"?"新規学習":"復習"} / ${m?rangeText(m,t.start,t.end):`${t.start}〜${t.end}`} / 予定日 ${esc(t.dueDate)}</div></div><span class="badge ${overdue?"bad":t.type==="review"?"blue":"warn"}">${overdue?"持ち越し":t.type==="review"?"復習":"新規"}</span></div>
+        <div class="badges"><span class="badge">予想 ${fmtMin(taskEstimate(t))}</span><span class="badge">${weakLabel[t.weak||"ok"]}</span>${m?`<span class="badge">${esc(displayDeadline(m))}</span><span class="badge">優先度 ${priorityLabel[m.priority]}</span>`:""}</div>
+        <div class="actions"><button data-fill="${t.id}">記録して完了</button><button class="secondary" data-quick="${t.id}">そのまま完了</button><button class="ghost" data-delete="${t.id}">削除</button></div>
+      </div></div>`;
+    div.querySelector("[data-fill]").onclick=()=>fillRecordFromTask(t.id);
+    div.querySelector("[data-quick]").onclick=()=>quickDone(t.id);
+    div.querySelector("[data-delete]").onclick=()=>deleteTask(t.id);
+    return div;
+  };
+
+  materialItem = function(m){
+    const e=estimate(m);
+    const div=document.createElement("div");
+    div.className="item";
+    const rem=remainingRanges(m.id);
+    const next=rem[0];
+    const future=isFutureMaterialV056(m);
+    const optional=isOptionalMaterial(m);
+    const noRange=isNoRangeMaterial(m);
+    const status = optional ? "自由記録" : e.remaining ? future ? "開始前" : "進行中" : noRange ? "時間記録" : "完了";
+    div.innerHTML=`
+      <div class="item-head"><div><div class="title">${esc(m.name)}</div><div class="small">${esc(m.category||"カテゴリなし")} / ${esc(displayRange(m))}</div></div><span class="badge ${optional?"blue":e.remaining?future?"blue":"warn":"good"}">${status}</span></div>
+      ${!noRange?`<div class="progress"><div class="bar" style="width:${Math.min(100,Math.max(0,e.progress))}%"></div></div>`:""}
+      <div class="badges"><span class="badge ${optional?"blue":""}">${optional?"プラスα":"計画対象"}</span><span class="badge">開始 ${esc(displayStartDateV056(m))}</span><span class="badge">${esc(displayDeadline(m))}</span>${noRange?`<span class="badge">範囲なし</span>`:`<span class="badge">進捗 ${Math.round(e.progress)}%</span><span class="badge">完了 ${e.done}/${e.targetTotal}${esc(m.unitLabel)}</span><span class="badge">残り ${e.remaining}${esc(m.unitLabel)}</span><span class="badge">残り約 ${fmtMin(e.remainingMinutes)}</span>`}</div>
+      <div class="twocol"><div>扱い：${optional?"自由記録のみ（時間枠外）":"計画対象（時間枠内）"}</div><div>期限：${esc(displayDeadline(m))}</div><div>次の未完了：${!noRange&&next?rangeText(m,next.start,next.end):"なし"}</div><div>優先度：${priorityLabel[m.priority]} / 平均難易度：${e.avgDiff.toFixed(1)}</div></div>
+      ${m.memo?`<div class="small" style="margin-top:8px;">メモ：${esc(m.memo)}</div>`:""}
+      <div class="actions" style="margin-top:10px"><button data-detail="${m.id}">詳細</button><button class="secondary" data-edit="${m.id}">編集</button><button class="ghost" data-del="${m.id}">削除</button></div>`;
+    div.querySelector("[data-detail]").onclick=()=>showMaterialDetail(m.id);
+    div.querySelector("[data-edit]").onclick=()=>editMat(m.id);
+    div.querySelector("[data-del]").onclick=()=>deleteMat(m.id);
+    return div;
+  };
+
+  renderMaterials = function(){
+    const list=document.getElementById("materialList");
+    list.innerHTML="";
+    if(!state.materials.length){ list.innerHTML='<div class="empty">まだ教材がありません。左から登録してください。</div>'; return; }
+    state.materials.slice().sort((a,b)=>{
+      const ma = isOptionalMaterial(a) ? 1 : 0;
+      const mb = isOptionalMaterial(b) ? 1 : 0;
+      if(ma !== mb) return ma-mb;
+      const da = isNoDeadlineMaterial(a) ? "9999-12-31" : a.deadline;
+      const db = isNoDeadlineMaterial(b) ? "9999-12-31" : b.deadline;
+      return da.localeCompare(db);
+    }).forEach(m=>list.appendChild(materialItem(m)));
+    renderMaterialDetail();
+  };
+
+  renderMaterialDetail = function(){
+    const card=document.getElementById("materialDetailCard");
+    const box=document.getElementById("materialDetail");
+    const title=document.getElementById("materialDetailTitle");
+    if(!card||!box||!title) return;
+    const m=mat(selectedMaterialId);
+    if(!m){ card.classList.add("hidden"); box.innerHTML=""; return; }
+    card.classList.remove("hidden");
+    const e=estimate(m), done=completedRanges(m.id), rem=remainingRanges(m.id), recs=recordsFor(m.id).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,8), pending=state.tasks.filter(t=>t.materialId===m.id&&!t.done&&isScheduledMaterial(m)).sort((a,b)=>a.dueDate.localeCompare(b.dueDate)).slice(0,8);
+    const noRange=isNoRangeMaterial(m), optional=isOptionalMaterial(m);
+    title.textContent=`教材詳細：${m.name}`;
+    box.innerHTML=`<div class="statgrid"><div class="statbox"><div class="small">扱い</div><div class="num">${optional?"プラスα":"計画対象"}</div></div><div class="statbox"><div class="small">期限</div><div class="num">${esc(displayDeadline(m))}</div></div><div class="statbox"><div class="small">範囲</div><div class="num">${noRange?"なし":Math.round(e.progress)+"%"}</div></div><div class="statbox"><div class="small">累計記録</div><div class="num">${fmtMin(recordsFor(m.id).reduce((s,r)=>s+Number(r.minutes||0),0))}</div></div></div>${!noRange?`<div class="progress"><div class="bar" style="width:${Math.min(100,Math.max(0,e.progress))}%"></div></div>`:""}<div class="grid" style="margin-top:12px;"><div class="span-6"><h3>範囲</h3><div class="small"><strong>対象：</strong>${esc(displayRange(m))}</div><div class="small"><strong>完了：</strong>${esc(rangesToText(done,m.unitLabel)||"なし")}</div><div class="small"><strong>未完了：</strong>${esc(rangesToText(rem,m.unitLabel)||"なし")}</div></div><div class="span-6"><h3>予定</h3><div class="small">開始日：${esc(displayStartDateV056(m))}</div><div class="small">期限：${esc(displayDeadline(m))}</div><div class="small">${optional?"自由記録教材は今日やること・曜日ごとの時間枠には入りません。":"計画対象教材は今日やること・曜日ごとの時間枠に入ります。"}</div><div class="small">${isNoDeadlineMaterial(m)?"期限警告は出しません。":"1日あたり必要：約"+fmtMin(e.requiredPerDay)}</div></div><div class="span-6"><h3>最近の記録</h3><div id="detailRecords" class="list"></div></div><div class="span-6"><h3>未完了タスク</h3><div id="detailTasks" class="list"></div></div></div>`;
+    const dr=box.querySelector("#detailRecords"); if(!recs.length) dr.innerHTML='<div class="empty">この教材の記録はまだありません。</div>'; else recs.forEach(r=>dr.appendChild(recordItem(r)));
+    const dt=box.querySelector("#detailTasks"); if(!pending.length) dt.innerHTML='<div class="empty">この教材の未完了タスクはありません。</div>'; else pending.forEach((t,i)=>dt.appendChild(taskItem(t,i+1)));
+  };
+
+  recordItem = function(r){
+    const m=mat(r.materialId);
+    const div=document.createElement("div");
+    div.className="item";
+    const range = m && isNoRangeMaterial(m) ? "範囲なし" : (m && r.start!=null && r.end!=null ? rangeText(m,r.start,r.end) : r.start!=null && r.end!=null ? `${r.start}〜${r.end}` : "範囲なし");
+    div.innerHTML=`
+      <div class="item-head"><div><div class="title">${esc(m?m.name:"削除済み教材")}</div><div class="small">${esc(r.date)} / ${r.type==="new"?"新規":"復習"} / ${esc(range)}</div></div><span class="badge ${r.weak==="weak"||r.weak==="redo"?"bad":r.weak==="uncertain"?"warn":"good"}">${weakLabel[r.weak||"ok"]}</span></div>
+      <div class="badges"><span class="badge">${fmtMin(r.minutes)}</span><span class="badge ${isOptionalMaterial(m)?"blue":""}">${isOptionalMaterial(m)?"プラスα":"計画対象"}</span><span class="badge">難易度 ${r.difficulty}</span><span class="badge">集中度 ${r.focus}</span></div>
+      ${r.memo?`<div class="small">メモ：${esc(r.memo)}</div>`:""}
+      <div class="actions" style="margin-top:8px"><button class="ghost" data-delrec="${r.id}">削除</button></div>`;
+    div.querySelector("[data-delrec]").onclick=()=>deleteRecord(r.id);
+    return div;
+  };
+
+  renderTasks = function(){
+    const p=document.getElementById("pendingTasks"), d=document.getElementById("doneTasks");
+    p.innerHTML=""; d.innerHTML="";
+    const pending=sortedTasks(state.tasks.filter(t=>!t.done && isScheduledMaterial(mat(t.materialId))));
+    const done=state.tasks.filter(t=>t.done && isScheduledMaterial(mat(t.materialId))).sort((a,b)=>(b.doneAt||"").localeCompare(a.doneAt||"")).slice(0,50);
+    if(!pending.length) p.innerHTML='<div class="empty">未完了タスクはありません。</div>'; else pending.forEach((t,i)=>p.appendChild(taskItem(t,i+1)));
+    if(!done.length) d.innerHTML='<div class="empty">完了済みタスクはまだありません。</div>';
+    else done.forEach((t,i)=>{ const item=taskItem(t,i+1); item.querySelectorAll("button").forEach(b=>b.remove()); const actions=document.createElement("div"); actions.className="actions"; actions.style.marginTop="8px"; const undo=document.createElement("button"); undo.className="secondary"; undo.textContent="未完了に戻す"; undo.onclick=()=>undoTask(t.id); actions.appendChild(undo); item.appendChild(actions); d.appendChild(item); });
+  };
+
+  renderFuturePlans = function(){
+    const box=document.getElementById("futurePlans");
+    if(!box) return;
+    const futures=state.materials.filter(m=>isScheduledMaterial(m) && isFutureMaterialV056(m)).map(m=>({m,e:estimate(m)})).sort((a,b)=>a.m.startDate.localeCompare(b.m.startDate));
+    box.innerHTML="";
+    if(!futures.length){ box.innerHTML='<div class="empty">開始日前の計画対象教材はありません。</div>'; return; }
+    futures.slice(0,12).forEach(({m,e})=>{
+      const div=document.createElement("div"); div.className="item";
+      div.innerHTML=`<div class="item-head"><div><div class="title">${esc(m.name)}</div><div class="small">開始日：${esc(m.startDate)} / 期限：${esc(displayDeadline(m))} / ${esc(displayRange(m))}</div></div><span class="badge blue">開始前</span></div><div class="badges"><span class="badge">開始まで ${Math.max(0, daysInc(today(), addDays(m.startDate,-1)))}日</span><span class="badge">残り約 ${fmtMin(e.remainingMinutes)}</span>${!isNoDeadlineMaterial(m)?`<span class="badge">1日約 ${fmtMin(e.requiredPerDay)}</span>`:""}</div>`;
+      box.appendChild(div);
+    });
+  };
+
+  editMat = function(mid){
+    const m=mat(mid); if(!m) return;
+    ensureV056Dom();
+    document.getElementById("materialTitle").textContent="教材を編集";
+    document.getElementById("materialId").value=m.id;
+    document.getElementById("matName").value=m.name;
+    document.getElementById("matCategory").value=m.category||"";
+    document.getElementById("matPlanningMode").value=materialPlanningMode(m);
+    document.getElementById("matUnit").value=m.unitLabel||"p";
+    document.getElementById("matStartDate").value=m.startDate||"";
+    document.getElementById("matDeadline").value=m.deadline||"";
+    document.getElementById("matNoDeadline").checked=isNoDeadlineMaterial(m);
+    document.getElementById("matPriority").value=m.priority||"normal";
+    document.getElementById("matNoRange").checked=isNoRangeMaterial(m);
+    setRangeRows(m.ranges&&m.ranges.length?m.ranges:[{start:"",end:""}]);
+    document.getElementById("matDefaultDiff").value=m.defaultDifficulty||3;
+    document.getElementById("matBaseMin").value=m.baseMinutes||6;
+    document.getElementById("matMemo").value=m.memo||"";
+    updateMaterialConfigUI();
+    switchTab("materials"); window.scrollTo({top:0,behavior:"smooth"});
+  };
+
+  resetMatForm = function(){
+    ensureV056Dom();
+    document.getElementById("materialTitle").textContent="教材を登録";
+    document.getElementById("materialForm").reset();
+    document.getElementById("materialId").value="";
+    document.getElementById("matPlanningMode").value="scheduled";
+    document.getElementById("matNoDeadline").checked=false;
+    document.getElementById("matNoRange").checked=false;
+    setRangeRows([{start:"",end:""}]);
+    document.getElementById("matUnit").value="p";
+    document.getElementById("matPriority").value="normal";
+    document.getElementById("matDefaultDiff").value=3;
+    document.getElementById("matBaseMin").value=6;
+    updateMaterialConfigUI();
+  };
+
+  const oldFillRecordFromTask = fillRecordFromTask;
+  fillRecordFromTask = function(taskId){ oldFillRecordFromTask(taskId); updateRecordRangeUI(); };
+
+  function attachV056Events(){
+    const modeEl=document.getElementById("matPlanningMode"); if(modeEl) modeEl.onchange=updateMaterialConfigUI;
+    const noDeadlineEl=document.getElementById("matNoDeadline"); if(noDeadlineEl) noDeadlineEl.onchange=updateMaterialConfigUI;
+    const noRangeEl=document.getElementById("matNoRange"); if(noRangeEl) noRangeEl.onchange=updateMaterialConfigUI;
+    const recMat=document.getElementById("recMaterial"); if(recMat) recMat.onchange=updateRecordRangeUI;
+    const cancel=document.getElementById("cancelMat"); if(cancel) cancel.onclick=resetMatForm;
+    const exportBtn=document.getElementById("exportBtn"); if(exportBtn) exportBtn.onclick=exportData;
+    const exportTop=document.getElementById("exportTop"); if(exportTop) exportTop.onclick=exportData;
+
+    document.querySelectorAll("#analysisScopeMode button").forEach(btn=>{
+      btn.onclick=()=>{ state.settings.analysisScope=btn.dataset.scope||"total"; saveLocalOnly(); renderAnalysis(); };
+    });
+    document.querySelectorAll("#analysisPeriodMode button").forEach(btn=>{
+      btn.onclick=()=>{ state.settings.analysisMode=btn.dataset.mode; saveLocalOnly(); renderAnalysis(); };
+    });
+    const apply=document.getElementById("applyAnalysisPeriod");
+    if(apply) apply.onclick=()=>{
+      const w=document.getElementById("analysisWeekDate"); if(w) state.settings.analysisWeekDate=w.value||today();
+      const y=document.getElementById("analysisYear"); if(y) state.settings.analysisYear=Number(y.value||today().slice(0,4));
+      const s=document.getElementById("analysisStart"); if(s) state.settings.analysisStart=s.value||addDays(today(),-6);
+      const e=document.getElementById("analysisEnd"); if(e) state.settings.analysisEnd=e.value||today();
+      if(state.settings.analysisStart>state.settings.analysisEnd){ const tmp=state.settings.analysisStart; state.settings.analysisStart=state.settings.analysisEnd; state.settings.analysisEnd=tmp; }
+      saveLocalOnly(); renderAnalysis();
+    };
+    const weekDate=document.getElementById("analysisWeekDate"); if(weekDate) weekDate.onchange=()=>{ state.settings.analysisWeekDate=weekDate.value||today(); saveLocalOnly(); renderAnalysis(); };
+
+    const form=document.getElementById("materialForm");
+    if(form){
+      form.onsubmit=e=>{
+        e.preventDefault();
+        const mid=document.getElementById("materialId").value || id("mat");
+        const planningMode=document.getElementById("matPlanningMode")?.value || "scheduled";
+        const noRange=Boolean(document.getElementById("matNoRange")?.checked);
+        const noDeadline=Boolean(document.getElementById("matNoDeadline")?.checked);
+        const deadline=document.getElementById("matDeadline").value || "";
+        const startDate=document.getElementById("matStartDate")?.value || "";
+        if(planningMode!=="optional" && noRange){ alert("範囲なしは、今のところ自由記録のみで使えます。"); return; }
+        if(!noDeadline && !deadline){ alert("期限を入れるか、『期限なし』にチェックしてください。"); return; }
+        const ranges = noRange ? [] : collectRangeRows();
+        if(!noRange && !ranges.length){ alert("範囲の開始番号と終了番号を入れてください。範囲で管理しない自由記録教材は『範囲なし』にしてください。"); return; }
+        if(startDate && !noDeadline && deadline && startDate > deadline){ alert("開始日は期限より前にしてください。"); return; }
+        const obj={id:mid,name:document.getElementById("matName").value.trim(),category:document.getElementById("matCategory").value.trim(),planningMode,rangeMode:noRange?"none":"ranged",unitLabel:document.getElementById("matUnit").value.trim()||"p",startDate:startDate||null,noDeadline,deadline:noDeadline?null:deadline,priority:document.getElementById("matPriority").value,ranges,defaultDifficulty:Number(document.getElementById("matDefaultDiff").value),baseMinutes:Number(document.getElementById("matBaseMin").value||6),memo:document.getElementById("matMemo").value.trim(),updatedAt:new Date().toISOString()};
+        if(!obj.name){ alert("教材名を入れてください。"); return; }
+        const idx=state.materials.findIndex(m=>m.id===mid);
+        if(idx>=0) state.materials[idx]=normalizeMaterialData({...state.materials[idx],...obj}); else state.materials.push(normalizeMaterialData({...obj,createdAt:new Date().toISOString()}));
+        if(planningMode==="optional") state.tasks = state.tasks.filter(t=>!(t.materialId===mid && !t.done && t.generated));
+        save(); resetMatForm(); render(); toast(idx>=0?"教材を更新しました":"教材を登録しました");
+      };
+    }
+
+    const recordForm=document.getElementById("recordForm");
+    if(recordForm){
+      recordForm.onsubmit=e=>{
+        e.preventDefault();
+        const taskId=document.getElementById("recordTaskId").value;
+        const materialId=document.getElementById("recMaterial").value;
+        const m=mat(materialId);
+        if(!m){ alert("教材を選んでください。"); return; }
+        const noRange=isNoRangeMaterial(m);
+        const record={id:id("rec"),materialId,type:document.getElementById("recType").value,date:document.getElementById("recDate").value||today(),start:null,end:null,minutes:Number(document.getElementById("recMinutes").value),difficulty:Number(document.getElementById("recDiff").value),focus:Number(document.getElementById("recFocus").value),weak:document.getElementById("recWeak").value,memo:document.getElementById("recMemo").value.trim(),taskId:taskId||null,createdAt:new Date().toISOString()};
+        if(record.minutes<=0){ alert("時間を入れてください。"); return; }
+        if(!noRange){
+          const startVal=document.getElementById("recStart").value;
+          const endVal=document.getElementById("recEnd").value;
+          if(startVal==="" || endVal===""){ alert("範囲開始と範囲終了を入れてください。"); return; }
+          record.start=Number(startVal); record.end=Number(endVal);
+          if(record.start>record.end) [record.start,record.end]=[record.end,record.start];
+          const inTarget = intersectAny({start:record.start,end:record.end}, m.ranges||[]);
+          if(!inTarget.length && !confirm("この範囲は教材の対象範囲外です。それでも記録しますか？")) return;
+          if(record.type==="new"){
+            const overlap = intersectAny({start:record.start,end:record.end}, completedRanges(record.materialId));
+            if(overlap.length){ const txt=overlap.map(r=>rangeText(m,r.start,r.end)).join(", "); if(!confirm(`すでに記録済みの範囲と重なっています：${txt}\nそれでも記録しますか？`)) return; }
+          }
+        }
+        state.records.push(record);
+        if(record.type==="new" && document.getElementById("recAutoReview").checked) makeReviewTasks(record);
+        if(taskId){ const t=state.tasks.find(x=>x.id===taskId); if(t){ t.done=true; t.doneAt=new Date().toISOString(); t.recordId=record.id; } }
+        save();
+        document.getElementById("recordForm").reset();
+        document.getElementById("recordTitle").textContent="学習を記録";
+        document.getElementById("recordTaskId").value="";
+        document.getElementById("recDate").value=today();
+        document.getElementById("recDiff").value=3;
+        document.getElementById("recFocus").value=3;
+        document.getElementById("recWeak").value="ok";
+        document.getElementById("recAutoReview").checked=true;
+        resetStopwatch();
+        render(); toast("記録しました");
+      };
+    }
+  }
+
+  const previousRender = render;
+  render = function(){
+    ensureV056Dom();
+    state = normalizeStateData(state);
+    previousRender();
+    ensureV056Dom();
+    attachV056Events();
+    updateMaterialConfigUI();
+    updateRecordRangeUI();
+  };
+
+  ensureV056Dom();
+  state = normalizeStateData(state);
+  attachV056Events();
+  updateMaterialConfigUI();
+  updateRecordRangeUI();
+  render();
+})();
+</script>
+
+
+<script>
+/* v0.5.8 patch: analysis graph fix, plus-alpha record UI cleanup, no-range material form cleanup */
+(function(){
+  const VERSION_057 = 5.7;
+
+  function materialPlanningModeV057(m){ return m && m.planningMode === "optional" ? "optional" : "scheduled"; }
+  function isOptionalMaterialV057(m){ return materialPlanningModeV057(m) === "optional"; }
+  function isNoRangeMaterialV057(m){ return m && m.rangeMode === "none"; }
+  function scopeLabelV057(scope){ return scope === "scheduled" ? "計画対象" : scope === "optional" ? "プラスα" : "合計"; }
+  function recordScopeV057(r){ const m = mat(r.materialId); return isOptionalMaterialV057(m) ? "optional" : "scheduled"; }
+  function filterRecordsByScopeV057(recs, scope){
+    const list = Array.isArray(recs) ? recs : [];
+    if(scope === "scheduled") return list.filter(r=>recordScopeV057(r)==="scheduled");
+    if(scope === "optional") return list.filter(r=>recordScopeV057(r)==="optional");
+    return list;
+  }
+  function recordKindLabelV057(r){
+    const m = mat(r.materialId);
+    if(isOptionalMaterialV057(m)) return "プラスα";
+    return r.type === "review" ? "復習" : "新規";
+  }
+  function getWeekStartV057(dateStr){
+    const d = dateObj(dateStr || today());
+    const day = d.getDay();
+    const diff = (day + 6) % 7;
+    d.setDate(d.getDate() - diff);
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().slice(0,10);
+  }
+  function periodRecordsV057(mode){
+    const scope = state.settings.analysisScope || "total";
+    const recs = filterRecordsByScopeV057(state.records || [], scope);
+    if(mode === "week"){
+      const start = getWeekStartV057(state.settings.analysisWeekDate || today());
+      const days = Array.from({length:7},(_,i)=>addDays(start,i));
+      const labels = ["月","火","水","木","金","土","日"];
+      const rows = days.map((d,i)=>({key:d,label:`${labels[i]} ${d.slice(5).replace("-","/")}`,minutes:recs.filter(r=>r.date===d).reduce((s,r)=>s+Number(r.minutes||0),0)}));
+      return {rows, records:recs.filter(r=>days.includes(r.date)), title:`週別 ${start.replaceAll("-","/")}〜${days[6].replaceAll("-","/")}`, start, end:days[6]};
+    }
+    if(mode === "month"){
+      const y = Number(state.settings.analysisYear || today().slice(0,4));
+      const rows = Array.from({length:12},(_,i)=>{
+        const mm = String(i+1).padStart(2,"0");
+        const minutes = recs.filter(r=>String(r.date||"").startsWith(`${y}-${mm}`)).reduce((s,r)=>s+Number(r.minutes||0),0);
+        return {key:`${y}-${mm}`, label:`${i+1}月`, minutes};
+      });
+      return {rows, records:recs.filter(r=>String(r.date||"").startsWith(`${y}-`)), title:`${y}年 月別`, start:`${y}-01-01`, end:`${y}-12-31`};
+    }
+    let start = state.settings.analysisStart || addDays(today(),-6);
+    let end = state.settings.analysisEnd || today();
+    if(start > end){ const tmp = start; start = end; end = tmp; }
+    const days=[];
+    let d=start, guard=0;
+    while(d<=end && guard<370){ days.push(d); d=addDays(d,1); guard++; }
+    const rows = days.map(d=>({key:d,label:d.slice(5).replace("-","/"),minutes:recs.filter(r=>r.date===d).reduce((s,r)=>s+Number(r.minutes||0),0)}));
+    return {rows, records:recs.filter(r=>r.date>=start && r.date<=end), title:`指定期間 ${start.replaceAll("-","/")}〜${end.replaceAll("-","/")}`, start, end};
+  }
+  function renderVerticalChartV057(el, rows, emptyText){
+    if(!el) return;
+    const safeRows = Array.isArray(rows) ? rows : [];
+    const max = Math.max(1, ...safeRows.map(r=>Number(r.minutes||0)));
+    if(!safeRows.some(r=>Number(r.minutes||0)>0)){
+      el.innerHTML = `<div class="empty">${emptyText}</div>`;
+      return;
+    }
+    el.innerHTML = `<div class="vchart-axis-label">縦軸：勉強時間 / 横軸：曜日・月・日付</div><div class="vchart"></div>`;
+    const chart = el.querySelector(".vchart");
+    safeRows.forEach(r=>{
+      const minutes = Number(r.minutes||0);
+      const h = Math.max(3, Math.round(minutes/max*190));
+      const col=document.createElement("div");
+      col.className="vbar-col";
+      col.innerHTML = `<div class="vbar-value">${minutes?fmtMin(minutes):""}</div><div class="vbar" style="height:${h}px"></div><div class="vbar-label">${esc(r.label||"")}</div>`;
+      chart.appendChild(col);
+    });
+  }
+
+  function ensureV057Dom(){
+    document.title = "学習負荷プランナー v0.5.8";
+    const h1=document.querySelector("h1"); if(h1) h1.textContent="学習負荷プランナー v0.5.8";
+    const sub=document.querySelector("header .sub"); if(sub) sub.textContent="分析グラフ修正、プラスα記録の種類非表示、範囲なし教材の入力整理に対応。";
+
+    const recType=document.getElementById("recType");
+    if(recType){ const label=recType.closest("label"); if(label) label.id="recTypeLabel"; }
+    const recAuto=document.getElementById("recAutoReview");
+    if(recAuto){ const label=recAuto.closest("label"); if(label) label.id="recAutoReviewLabel"; }
+    const matBase=document.getElementById("matBaseMin");
+    if(matBase){ const label=matBase.closest("label"); if(label) label.id="matBaseMinLabel"; }
+
+    const updates = document.querySelector("#updates .grid");
+    if(updates && !document.getElementById("updateV057Card")){
+      updates.insertAdjacentHTML("afterbegin", `
+        <div class="card span-12" id="updateV057Card">
+          <h2>v0.5.8</h2>
+          <div class="list">
+            <div class="item"><div class="title">分析グラフの表示不具合を修正</div><div class="small">v0.5.6で、勉強時間の振り返りには反映されるのに学習時間グラフが表示されない問題を修正しました。</div></div>
+            <div class="item"><div class="title">プラスα記録の種類入力を非表示</div><div class="small">自由記録教材では「新規/復習」を選ばず、記録上はプラスαとして扱います。</div></div>
+            <div class="item"><div class="title">範囲なし教材の入力欄を整理</div><div class="small">自由記録教材で範囲なしを選んだ時、1単位の初期予想欄を非表示にしました。</div></div>
+          </div>
+        </div>`);
+    }
+  }
+
+  function applyMaterialConfigUIV057(){
+    const modeEl=document.getElementById("matPlanningMode");
+    const noRangeEl=document.getElementById("matNoRange");
+    const noDeadlineEl=document.getElementById("matNoDeadline");
+    const deadlineEl=document.getElementById("matDeadline");
+    const optional = modeEl && modeEl.value === "optional";
+    if(noRangeEl){
+      noRangeEl.disabled = !optional;
+      if(!optional) noRangeEl.checked = false;
+    }
+    const noRange = Boolean(noRangeEl && noRangeEl.checked);
+    const rangeRows=document.getElementById("rangeRows");
+    const addRangeBtn=document.getElementById("addRangeBtn");
+    const hint=rangeRows && rangeRows.parentElement ? rangeRows.parentElement.querySelector(".rangehint") : null;
+    if(rangeRows) rangeRows.style.display = noRange ? "none" : "grid";
+    if(addRangeBtn) addRangeBtn.disabled = noRange;
+    if(hint) hint.textContent = noRange ? "範囲なし教材は、記録時に範囲開始・終了を入力しません。" : "開始番号と終了番号だけ入れる。例：開始 1 / 終了 80。複数範囲も追加可能。";
+    if(deadlineEl && noDeadlineEl){
+      deadlineEl.disabled = noDeadlineEl.checked;
+      deadlineEl.required = false;
+      if(noDeadlineEl.checked) deadlineEl.value = "";
+    }
+    const baseLabel=document.getElementById("matBaseMinLabel");
+    const baseInput=document.getElementById("matBaseMin");
+    if(baseLabel) baseLabel.classList.toggle("hidden", optional && noRange);
+    if(baseInput) baseInput.required = !(optional && noRange);
+  }
+
+  function applyRecordUIV057(){
+    const m=mat(document.getElementById("recMaterial")?.value);
+    const optional=isOptionalMaterialV057(m);
+    const noRange=isNoRangeMaterialV057(m);
+    const recType=document.getElementById("recType");
+    const recTypeLabel=document.getElementById("recTypeLabel");
+    if(recType){
+      if(optional) recType.value="new";
+      recType.disabled=optional;
+    }
+    if(recTypeLabel) recTypeLabel.classList.toggle("hidden", optional);
+    const block=document.getElementById("recordRangeBlock");
+    const recStart=document.getElementById("recStart");
+    const recEnd=document.getElementById("recEnd");
+    if(block) block.classList.toggle("hidden", noRange);
+    if(recStart){ recStart.required=!noRange; if(noRange) recStart.value=""; }
+    if(recEnd){ recEnd.required=!noRange; if(noRange) recEnd.value=""; }
+    const auto=document.getElementById("recAutoReview");
+    const autoLabel=document.getElementById("recAutoReviewLabel");
+    if(auto){
+      auto.disabled=optional || noRange;
+      if(optional || noRange) auto.checked=false;
+      else if(auto.checked===false) auto.checked=true;
+    }
+    if(autoLabel) autoLabel.classList.toggle("hidden", optional || noRange);
+  }
+
+  renderAnalysis = function(){
+    const stats=document.getElementById("analysisStats");
+    if(!stats) return;
+    if(!state.settings) state.settings={};
+    if(!state.settings.analysisScope) state.settings.analysisScope="total";
+    if(!state.settings.analysisMode) state.settings.analysisMode="week";
+    if(!state.settings.analysisWeekDate) state.settings.analysisWeekDate=today();
+    if(!state.settings.analysisYear) state.settings.analysisYear=Number(today().slice(0,4));
+    if(!state.settings.analysisStart) state.settings.analysisStart=addDays(today(),-6);
+    if(!state.settings.analysisEnd) state.settings.analysisEnd=today();
+
+    const scope=state.settings.analysisScope || "total";
+    document.querySelectorAll("#analysisScopeMode button").forEach(b=>b.classList.toggle("active", b.dataset.scope===scope));
+    const all=state.records || [];
+    const allTotal=all.reduce((s,r)=>s+Number(r.minutes||0),0);
+    const allScheduled=filterRecordsByScopeV057(all,"scheduled").reduce((s,r)=>s+Number(r.minutes||0),0);
+    const allOptional=filterRecordsByScopeV057(all,"optional").reduce((s,r)=>s+Number(r.minutes||0),0);
+    const scopedAll=filterRecordsByScopeV057(all,scope);
+    const r7=filterRecordsByScopeV057(recordsInLastDays(7),scope);
+    const r30=filterRecordsByScopeV057(recordsInLastDays(30),scope);
+    const min7=r7.reduce((s,r)=>s+Number(r.minutes||0),0);
+    const min30=r30.reduce((s,r)=>s+Number(r.minutes||0),0);
+    const todayMin=scopedAll.filter(r=>r.date===today()).reduce((s,r)=>s+Number(r.minutes||0),0);
+    const active7=new Set(r7.map(r=>r.date)).size;
+    const avgDiff=avg(r30.map(r=>Number(r.difficulty)))||0;
+    stats.innerHTML=`
+      <div class="statbox"><div class="small">総勉強時間（累計）</div><div class="num">${fmtMin(allTotal)}</div></div>
+      <div class="statbox"><div class="small">計画対象（累計）</div><div class="num">${fmtMin(allScheduled)}</div></div>
+      <div class="statbox"><div class="small">プラスα（累計）</div><div class="num">${fmtMin(allOptional)}</div></div>
+      <div class="statbox"><div class="small">表示中：${scopeLabelV057(scope)} 今日</div><div class="num">${fmtMin(todayMin)}</div></div>
+      <div class="statbox"><div class="small">表示中：直近7日</div><div class="num">${fmtMin(min7)}</div></div>
+      <div class="statbox"><div class="small">表示中：直近30日</div><div class="num">${fmtMin(min30)}</div></div>
+      <div class="statbox"><div class="small">7日の勉強日数</div><div class="num">${active7}/7日</div></div>
+      <div class="statbox"><div class="small">30日の平均難易度</div><div class="num">${avgDiff?avgDiff.toFixed(1):"-"}</div></div>`;
+
+    const mode=state.settings.analysisMode || "week";
+    document.querySelectorAll("#analysisPeriodMode button").forEach(b=>b.classList.toggle("active", b.dataset.mode===mode));
+    const weekLabel=document.getElementById("analysisWeekLabel"), yearLabel=document.getElementById("analysisYearLabel"), startLabel=document.getElementById("analysisStartLabel"), endLabel=document.getElementById("analysisEndLabel");
+    if(weekLabel) weekLabel.classList.toggle("hidden", mode!=="week");
+    if(yearLabel) yearLabel.classList.toggle("hidden", mode!=="month");
+    if(startLabel) startLabel.classList.toggle("hidden", mode!=="custom");
+    if(endLabel) endLabel.classList.toggle("hidden", mode!=="custom");
+    const weekEl=document.getElementById("analysisWeekDate"); if(weekEl) weekEl.value=state.settings.analysisWeekDate || today();
+    const yearEl=document.getElementById("analysisYear"); if(yearEl) yearEl.value=state.settings.analysisYear || Number(today().slice(0,4));
+    const startEl=document.getElementById("analysisStart"); if(startEl) startEl.value=state.settings.analysisStart || addDays(today(),-6);
+    const endEl=document.getElementById("analysisEnd"); if(endEl) endEl.value=state.settings.analysisEnd || today();
+
+    const pr=periodRecordsV057(mode);
+    renderVerticalChartV057(document.getElementById("studyTimeChart"), pr.rows, "この期間の記録はまだありません。");
+    const periodMin=pr.records.reduce((s,r)=>s+Number(r.minutes||0),0);
+    const daysWith=new Set(pr.records.map(r=>r.date)).size;
+    const topMat=state.materials.map(m=>({name:m.name,minutes:pr.records.filter(r=>r.materialId===m.id).reduce((s,r)=>s+Number(r.minutes||0),0)})).sort((a,b)=>b.minutes-a.minutes)[0];
+    const sumEl=document.getElementById("analysisPeriodSummary");
+    if(sumEl) sumEl.innerHTML=`<span class="badge blue">${esc(pr.title)}</span><span class="badge">表示 ${esc(scopeLabelV057(scope))}</span><span class="badge">期間合計 ${fmtMin(periodMin)}</span><span class="badge">勉強日数 ${daysWith}日</span>${topMat&&topMat.minutes?`<span class="badge">最多 ${esc(topMat.name)} ${fmtMin(topMat.minutes)}</span>`:""}`;
+
+    const matRows=state.materials.map(m=>({label:m.name,value:pr.records.filter(r=>r.materialId===m.id).reduce((s,r)=>s+Number(r.minutes||0),0),text:fmtMin(pr.records.filter(r=>r.materialId===m.id).reduce((s,r)=>s+Number(r.minutes||0),0))})).filter(x=>x.value>0).sort((a,b)=>b.value-a.value).slice(0,8);
+    renderBarList(document.getElementById("materialRanking"), matRows, "この期間の教材別記録はまだありません。");
+    const scheduledNew=pr.records.filter(r=>recordScopeV057(r)==="scheduled" && r.type!=="review").reduce((s,r)=>s+Number(r.minutes||0),0);
+    const scheduledReview=pr.records.filter(r=>recordScopeV057(r)==="scheduled" && r.type==="review").reduce((s,r)=>s+Number(r.minutes||0),0);
+    const optionalMin=pr.records.filter(r=>recordScopeV057(r)==="optional").reduce((s,r)=>s+Number(r.minutes||0),0);
+    const typeRows=[];
+    if(scope!=="optional"){
+      if(scheduledNew>0) typeRows.push({label:"新規",value:scheduledNew,text:fmtMin(scheduledNew)});
+      if(scheduledReview>0) typeRows.push({label:"復習",value:scheduledReview,text:fmtMin(scheduledReview)});
+    }
+    if(scope!=="scheduled" && optionalMin>0) typeRows.push({label:"プラスα",value:optionalMin,text:fmtMin(optionalMin)});
+    renderBarList(document.getElementById("typeBreakdown"), typeRows, "この期間にはまだ記録がありません。");
+    const weak=document.getElementById("weakRecords");
+    if(weak){
+      weak.innerHTML="";
+      const wr=pr.records.filter(r=>r.weak&&r.weak!=="ok").sort((a,b)=>b.date.localeCompare(a.date)).slice(0,10);
+      if(!wr.length) weak.innerHTML='<div class="empty">この期間に苦手フラグのある記録はありません。</div>';
+      else wr.forEach(r=>weak.appendChild(recordItem(r)));
+    }
+  };
+
+  recordItem = function(r){
+    const m=mat(r.materialId);
+    const div=document.createElement("div");
+    div.className="item";
+    const range = m && isNoRangeMaterialV057(m) ? "範囲なし" : (m && r.start!=null && r.end!=null ? rangeText(m,r.start,r.end) : r.start!=null && r.end!=null ? `${r.start}〜${r.end}` : "範囲なし");
+    div.innerHTML=`
+      <div class="item-head"><div><div class="title">${esc(m?m.name:"削除済み教材")}</div><div class="small">${esc(r.date)} / ${recordKindLabelV057(r)} / ${esc(range)}</div></div><span class="badge ${r.weak==="weak"||r.weak==="redo"?"bad":r.weak==="uncertain"?"warn":"good"}">${weakLabel[r.weak||"ok"]}</span></div>
+      <div class="badges"><span class="badge">${fmtMin(r.minutes)}</span><span class="badge ${isOptionalMaterialV057(m)?"blue":""}">${isOptionalMaterialV057(m)?"プラスα":"計画対象"}</span><span class="badge">難易度 ${r.difficulty}</span><span class="badge">集中度 ${r.focus}</span></div>
+      ${r.memo?`<div class="small">メモ：${esc(r.memo)}</div>`:""}
+      <div class="actions" style="margin-top:8px"><button class="ghost" data-delrec="${r.id}">削除</button></div>`;
+    div.querySelector("[data-delrec]").onclick=()=>deleteRecord(r.id);
+    return div;
+  };
+
+  function attachV057Events(){
+    const modeEl=document.getElementById("matPlanningMode"); if(modeEl) modeEl.onchange=applyMaterialConfigUIV057;
+    const noDeadlineEl=document.getElementById("matNoDeadline"); if(noDeadlineEl) noDeadlineEl.onchange=applyMaterialConfigUIV057;
+    const noRangeEl=document.getElementById("matNoRange"); if(noRangeEl) noRangeEl.onchange=applyMaterialConfigUIV057;
+    const recMat=document.getElementById("recMaterial"); if(recMat) recMat.onchange=applyRecordUIV057;
+
+    document.querySelectorAll("#analysisScopeMode button").forEach(btn=>{ btn.onclick=()=>{ state.settings.analysisScope=btn.dataset.scope||"total"; saveLocalOnly(); renderAnalysis(); }; });
+    document.querySelectorAll("#analysisPeriodMode button").forEach(btn=>{ btn.onclick=()=>{ state.settings.analysisMode=btn.dataset.mode||"week"; saveLocalOnly(); renderAnalysis(); }; });
+    const apply=document.getElementById("applyAnalysisPeriod");
+    if(apply) apply.onclick=()=>{
+      const w=document.getElementById("analysisWeekDate"); if(w) state.settings.analysisWeekDate=w.value||today();
+      const y=document.getElementById("analysisYear"); if(y) state.settings.analysisYear=Number(y.value||today().slice(0,4));
+      const s=document.getElementById("analysisStart"); if(s) state.settings.analysisStart=s.value||addDays(today(),-6);
+      const e=document.getElementById("analysisEnd"); if(e) state.settings.analysisEnd=e.value||today();
+      if(state.settings.analysisStart>state.settings.analysisEnd){ const tmp=state.settings.analysisStart; state.settings.analysisStart=state.settings.analysisEnd; state.settings.analysisEnd=tmp; }
+      saveLocalOnly(); renderAnalysis();
+    };
+    const weekDate=document.getElementById("analysisWeekDate"); if(weekDate) weekDate.onchange=()=>{ state.settings.analysisWeekDate=weekDate.value||today(); saveLocalOnly(); renderAnalysis(); };
+  }
+
+  const oldNormalizeV057 = normalizeStateData;
+  normalizeStateData = function(data){
+    const s = oldNormalizeV057 ? oldNormalizeV057(data) : data;
+    if(s && typeof s === "object") s.version = VERSION_057;
+    return s;
+  };
+  const oldSaveLocalOnlyV057 = saveLocalOnly;
+  saveLocalOnly = function(){
+    if(state) state.version = VERSION_057;
+    oldSaveLocalOnlyV057();
+  };
+
+  const oldRenderV057 = render;
+  render = function(){
+    oldRenderV057();
+    ensureV057Dom();
+    attachV057Events();
+    applyMaterialConfigUIV057();
+    applyRecordUIV057();
+  };
+
+  ensureV057Dom();
+  attachV057Events();
+  applyMaterialConfigUIV057();
+  applyRecordUIV057();
+  try { render(); } catch(err) { console.error("v0.5.8 render failed", err); }
 })();
 </script>
 
