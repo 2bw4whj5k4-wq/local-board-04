@@ -3195,6 +3195,30 @@ initCloud();
     }
   };
 
+  function allocatedNewRangesV060Fix(materialId){
+    const m = mat(materialId);
+    if(!m || isNoRangeMaterial(m)) return [];
+    const target = m.ranges || [];
+    const parts = [];
+    const addClipped = (start, end) => {
+      const rg = {start:Number(start), end:Number(end)};
+      if(!Number.isFinite(rg.start) || !Number.isFinite(rg.end)) return;
+      if(rg.start > rg.end) [rg.start, rg.end] = [rg.end, rg.start];
+      for(const t of target){ const x = intersect(rg, t); if(x) parts.push(x); }
+    };
+    (completedRanges(materialId) || []).forEach(r=>addClipped(r.start, r.end));
+    (state.tasks || [])
+      .filter(t=>!t.done && t.type==="new" && t.materialId===materialId && t.start!=null && t.end!=null)
+      .forEach(t=>addClipped(t.start, t.end));
+    return mergeRanges(parts);
+  }
+
+  function unassignedNewRangesV060Fix(materialId){
+    const m = mat(materialId);
+    if(!m || isNoRangeMaterial(m)) return [];
+    return subtractRanges(m.ranges || [], allocatedNewRangesV060Fix(materialId));
+  }
+
   buildTodayPlan = function(force=false){
     const date=today();
     if(force){
@@ -3221,9 +3245,13 @@ initCloud();
       });
     for(const {m,e} of materials){
       if(cap<=0) break;
-      const remain = remainingRanges(m.id);
+      const remain = unassignedNewRangesV060Fix(m.id);
       if(!remain.length) continue;
-      const requiredUnits = Math.max(1, Math.ceil((e.remaining / Math.max(1,e.planDays)) * (priorityMul[m.priority]||1)));
+      const alreadyAllocated = totalLen(allocatedNewRangesV060Fix(m.id));
+      const targetTotal = totalLen(m.ranges || []);
+      const unassignedUnits = Math.max(0, targetTotal - alreadyAllocated);
+      if(unassignedUnits<=0) continue;
+      const requiredUnits = Math.max(1, Math.ceil((Math.min(e.remaining, unassignedUnits) / Math.max(1,e.planDays)) * (priorityMul[m.priority]||1)));
       const capUnits = Math.max(1, Math.floor(cap / Math.max(1,e.predicted)));
       const units = Math.min(requiredUnits, capUnits, len(remain[0]));
       if(units<=0) continue;
@@ -3959,7 +3987,7 @@ initCloud();
 
 /* v0.5.9 patch: save-status visibility and diagnostic copy, no data schema change */
 (function(){
-  const APP_VERSION_059 = "0.5.9";
+  const APP_VERSION_059 = "0.6.0";
   const LOCAL_LAST_SAVE_KEY_059 = KEY + "-last-local-saved-at";
   let lastDiagnosticErrorV059 = "";
 
@@ -4040,6 +4068,7 @@ initCloud();
       cloudUpdatedAt: state?._cloudUpdatedAt || "",
       counts: c,
       lastDiagnosticError: lastDiagnosticErrorV059 || "",
+      lastSharingError: localStorage.getItem(KEY + "-sharing-last-error") || "",
       userAgent: navigator.userAgent
     };
     return "学習負荷プランナー診断情報\n" + JSON.stringify(info, null, 2);
@@ -4244,11 +4273,15 @@ initCloud();
 
   function friendlyShareErrorV060(error){
     const raw = error?.message || String(error || "");
-    if(raw.includes(SHARE_PROFILE_TABLE_060) || raw.includes(SHARE_LINK_TABLE_060) || raw.includes(SHARE_SNAPSHOT_TABLE_060) || error?.code === "42P01"){
-      return "共有用テーブルが未作成です。ZIP内のSQLをSupabaseで実行してください。";
+    const lower = raw.toLowerCase();
+    if(lower.includes("row-level security") || lower.includes("permission denied") || error?.code === "42501"){
+      return "共有用テーブルへの権限が不足しています。ZIP内のSQLをもう一度Supabaseで実行してください。";
     }
-    if(raw.toLowerCase().includes("row-level security") || raw.includes("permission denied") || error?.code === "42501"){
-      return "共有用テーブルのRLS設定で拒否されました。ZIP内のSQLを確認してください。";
+    if(error?.code === "42P01" || error?.code === "PGRST205" || lower.includes("schema cache") || lower.includes("could not find") || lower.includes("not found")){
+      return "共有用テーブルがAPI側にまだ認識されていません。ZIP内のSQLをもう一度実行し、PostgREST schema cacheを更新してください。";
+    }
+    if(raw.includes(SHARE_PROFILE_TABLE_060) || raw.includes(SHARE_LINK_TABLE_060) || raw.includes(SHARE_SNAPSHOT_TABLE_060)){
+      return raw;
     }
     return raw;
   }
@@ -4315,6 +4348,10 @@ initCloud();
       .filter(r=>!isRecordPrivateV060(r))
       .filter(r=>mat(r.materialId));
     const totalMinutes = visibleRecords.reduce((s,r)=>s+Number(r.minutes||0),0);
+    const todayKey = typeof today === "function" ? today() : "";
+    const todayMinutes = visibleRecords
+      .filter(r=>String(r.date||"") === todayKey)
+      .reduce((s,r)=>s+Number(r.minutes||0),0);
     const byMaterial = new Map();
     visibleRecords.forEach(r=>{
       const m = mat(r.materialId);
@@ -4342,16 +4379,12 @@ initCloud();
           scopeLabel:materialScopeLabelV060(m)
         };
       });
-    const appToday = typeof today === "function" ? today() : "";
-    const todayMinutes = visibleRecords
-      .filter(r => String(r.date || "") === String(appToday || ""))
-      .reduce((sum, r) => sum + Number(r.minutes || 0), 0);
     return {
       version:"0.6.0",
       displayName:shareProfileV060?.display_name || defaultDisplayNameV060(),
       updatedAt:new Date().toISOString(),
-      appToday,
-      totals:{ totalMinutes, todayMinutes, recordCount:visibleRecords.length },
+      appToday: todayKey,
+      totals:{ totalMinutes, todayMinutes, recordCount:visibleRecords.length, materialCount:materialTotals.length },
       materialTotals,
       recentRecords
     };
@@ -4780,12 +4813,11 @@ initCloud();
       item.className = "item";
       const mats = Array.isArray(data.materialTotals) ? data.materialTotals.slice(0,8) : [];
       const recs = Array.isArray(data.recentRecords) ? data.recentRecords.slice(0,12) : [];
-      const snapshotToday = String(data.appToday || "");
-      const todayMinutes = Number.isFinite(Number(totals.todayMinutes))
-        ? Number(totals.todayMinutes || 0)
-        : (Array.isArray(data.recentRecords) ? data.recentRecords : [])
-          .filter(r => String(r.date || "") === snapshotToday)
-          .reduce((sum, r) => sum + Number(r.minutes || 0), 0);
+      const viewToday = data.appToday || (typeof today === "function" ? today() : "");
+      const fallbackTodayMinutes = recs
+        .filter(r=>String(r.date||"") === String(viewToday||""))
+        .reduce((s,r)=>s+Number(r.minutes||0),0);
+      const todayMinutes = Number.isFinite(Number(totals.todayMinutes)) ? Number(totals.todayMinutes) : fallbackTodayMinutes;
       item.innerHTML = `
         <div class="item-head">
           <div><div class="title">${esc(data.displayName || "共有相手")}</div><div class="small">最終更新：${esc(row.updated_at ? new Date(row.updated_at).toLocaleString("ja-JP", {hour12:false}) : "不明")}</div></div>
@@ -4793,7 +4825,7 @@ initCloud();
         </div>
         <div class="share-grid">
           <div class="share-mini"><div class="label">総勉強時間</div><div class="value">${fmtMin(totals.totalMinutes || 0)}</div></div>
-          <div class="share-mini"><div class="label">今日の勉強時間</div><div class="value">${fmtMin(todayMinutes)}</div></div>
+          <div class="share-mini"><div class="label">今日の勉強時間</div><div class="value">${fmtMin(todayMinutes || 0)}</div></div>
           <div class="share-mini"><div class="label">記録数</div><div class="value">${Number(totals.recordCount || 0)}件</div></div>
         </div>
         <div class="grid" style="margin-top:10px;">
