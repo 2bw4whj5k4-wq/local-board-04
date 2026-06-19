@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>学習負荷プランナー v0.5.8</title>
+  <title>学習負荷プランナー v0.6.0</title>
   <style>
     :root {
       --bg: #f7f3ee;
@@ -356,7 +356,7 @@
   <header>
     <div class="head">
       <div>
-        <h1>学習負荷プランナー v0.5.8</h1>
+        <h1>学習負荷プランナー v0.6.0</h1>
         <p class="sub">計画対象/自由記録教材、期限なし、自由記録の範囲なし、分析の合計/内訳切り替えに対応。</p>
       </div>
       <div class="actions">
@@ -3956,6 +3956,989 @@ initCloud();
   applyRecordUIV057();
   try { render(); } catch(err) { console.error("v0.5.8 render failed", err); }
 })();
+
+/* v0.5.9 patch: save-status visibility and diagnostic copy, no data schema change */
+(function(){
+  const APP_VERSION_059 = "0.5.9";
+  const LOCAL_LAST_SAVE_KEY_059 = KEY + "-last-local-saved-at";
+  let lastDiagnosticErrorV059 = "";
+
+  function nowLabelV059(){
+    return new Date().toLocaleString("ja-JP", { hour12:false });
+  }
+
+  function maskEmailV059(email){
+    const value = String(email || "");
+    if(!value.includes("@")) return "";
+    const [name, domain] = value.split("@");
+    const maskedName = name.length <= 2 ? name[0] + "***" : name.slice(0,2) + "***" + name.slice(-1);
+    return `${maskedName}@${domain}`;
+  }
+
+  function rememberDiagnosticErrorV059(message){
+    const text = String(message || "").trim();
+    if(!text) return;
+    if(/エラー|失敗|読み込めません|初期化できません|保存できません|通信/.test(text)){
+      lastDiagnosticErrorV059 = `${nowLabelV059()} ${text}`;
+    }
+  }
+
+  function ensureV059Styles(){
+    if(document.getElementById("v059Style")) return;
+    document.head.insertAdjacentHTML("beforeend", `
+      <style id="v059Style">
+        .sync-status-panel { margin-top:14px; }
+        .sync-status-grid { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:8px; margin:10px 0; }
+        .sync-status-cell { border:1px solid var(--line); border-radius:14px; padding:10px; background:rgba(255,255,255,.56); min-height:62px; }
+        .sync-status-cell .label { color:var(--muted); font-size:12px; line-height:1.4; }
+        .sync-status-cell .value { margin-top:4px; font-weight:800; font-size:13px; line-height:1.45; overflow-wrap:anywhere; }
+        .sync-status-cell.good .value { color:var(--good); }
+        .sync-status-cell.warn .value { color:var(--warn); }
+        .sync-status-cell.bad .value { color:var(--bad); }
+        body[data-theme="dark"] .sync-status-cell { background:#312d2a; }
+        @media (max-width:900px){ .sync-status-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); } }
+        @media (max-width:520px){ .sync-status-grid { grid-template-columns:1fr; } }
+      </style>`);
+  }
+
+  function statusCellV059(label, value, kind=""){
+    return `<div class="sync-status-cell ${kind}"><div class="label">${esc(label)}</div><div class="value">${esc(value)}</div></div>`;
+  }
+
+  function countsV059(){
+    return {
+      materials: Array.isArray(state?.materials) ? state.materials.length : 0,
+      records: Array.isArray(state?.records) ? state.records.length : 0,
+      tasks: Array.isArray(state?.tasks) ? state.tasks.length : 0,
+      undoneTasks: Array.isArray(state?.tasks) ? state.tasks.filter(t=>!t.done).length : 0
+    };
+  }
+
+  function cloudReadyLabelV059(){
+    if(supabaseClient) return "接続OK";
+    if(window.supabase && window.supabase.createClient) return "ライブラリ読込済み";
+    return "未初期化";
+  }
+
+  function buildDiagnosticTextV059(){
+    const c = countsV059();
+    const info = {
+      appVersion: APP_VERSION_059,
+      savedDataVersion: state?.version ?? null,
+      generatedAt: new Date().toISOString(),
+      appToday: (typeof today === "function") ? today() : "",
+      page: location.origin + location.pathname,
+      loginStatus: currentUser ? "logged_in" : "not_logged_in",
+      userEmailMasked: maskEmailV059(currentUser?.email),
+      supabaseLibraryLoaded: Boolean(window.supabase && window.supabase.createClient),
+      supabaseClientReady: Boolean(supabaseClient),
+      browserOnline: navigator.onLine,
+      hasLocalUnsyncedChanges: Boolean(hasLocalUnsyncedChanges),
+      lastLocalSavedAt: localStorage.getItem(LOCAL_LAST_SAVE_KEY_059) || "",
+      lastCloudSavedAt: lastCloudSavedAt || "",
+      lastCloudLoadedAt: lastCloudLoadedAt || "",
+      cloudUpdatedAt: state?._cloudUpdatedAt || "",
+      counts: c,
+      lastDiagnosticError: lastDiagnosticErrorV059 || "",
+      userAgent: navigator.userAgent
+    };
+    return "学習負荷プランナー診断情報\n" + JSON.stringify(info, null, 2);
+  }
+
+  function copyTextV059(text){
+    if(navigator.clipboard && window.isSecureContext){
+      return navigator.clipboard.writeText(text);
+    }
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.top = "-1000px";
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+    return Promise.resolve();
+  }
+
+  function copyDiagnosticInfoV059(){
+    const text = buildDiagnosticTextV059();
+    copyTextV059(text).then(()=>{
+      const hint = document.getElementById("diagnosticCopyHint");
+      if(hint) hint.textContent = "診断情報をコピーしました。エラー相談時にそのまま貼れます。";
+      toast("診断情報をコピーしました");
+    }).catch(e=>{
+      lastDiagnosticErrorV059 = `${nowLabelV059()} 診断情報コピー失敗：${e.message || e}`;
+      alert("コピーに失敗しました。ブラウザの権限を確認してください。");
+      renderSyncDiagnosticsV059();
+    });
+  }
+
+  function ensureV059Dom(){
+    ensureV059Styles();
+    document.title = "学習負荷プランナー v0.6.0";
+    const h1 = document.querySelector("h1");
+    if(h1) h1.textContent = "学習負荷プランナー v0.6.0";
+    const sub = document.querySelector("header .sub");
+    if(sub) sub.textContent = "閲覧専用共有、記録ごとの非公開、共有用スナップショットに対応。";
+
+    const settingsGrid = document.querySelector("#settings .grid");
+    if(settingsGrid && !document.getElementById("syncSafetyPanel")){
+      const cloudCard = [...settingsGrid.querySelectorAll(".card")].find(c => c.querySelector("h2")?.textContent.trim() === "クラウド同期");
+      const panelHtml = `
+        <div class="card span-12 sync-status-panel" id="syncSafetyPanel">
+          <h2>保存状態・診断</h2>
+          <p class="small">データ本体は変更せず、ログイン・Supabase接続・保存/読込時刻・未同期の有無だけを表示します。</p>
+          <div class="sync-status-grid" id="syncStatusGrid"></div>
+          <div class="actions">
+            <button type="button" class="secondary" id="refreshSyncStatusBtn">状態を更新</button>
+            <button type="button" id="copyDiagnosticBtn">診断情報をコピー</button>
+          </div>
+          <p class="small" id="diagnosticCopyHint" style="margin-top:8px;">コピーされるのは状態情報だけです。教材名・記録メモ・勉強内容の本文は含めません。</p>
+        </div>`;
+      if(cloudCard) cloudCard.insertAdjacentHTML("afterend", panelHtml);
+      else settingsGrid.insertAdjacentHTML("beforeend", panelHtml);
+    }
+
+    const updates = document.querySelector("#updates .grid");
+    if(updates && !document.getElementById("updateV059Card")){
+      updates.insertAdjacentHTML("afterbegin", `
+        <div class="card span-12" id="updateV059Card">
+          <h2>v0.5.9</h2>
+          <div class="list">
+            <div class="item"><div class="title">保存状態の見える化</div><div class="small">ログイン状態、Supabase接続、最終ローカル保存、最終クラウド保存/読込、未同期の有無を設定タブで確認できるようにしました。</div></div>
+            <div class="item"><div class="title">診断情報コピーを追加</div><div class="small">トラブル時に、アプリバージョン・接続状態・保存時刻・件数・最後のエラーをコピーできます。教材名や記録本文は含めません。</div></div>
+            <div class="item"><div class="title">保存データ構造は変更なし</div><div class="small">Supabaseのテーブル構成、保存JSON、教材・記録・タスクの構造は変更していません。</div></div>
+          </div>
+        </div>`);
+    }
+    if(updates){
+      const topNotice = updates.querySelector(".notice.good");
+      if(topNotice) topNotice.innerHTML = "v0.5.9では、データ保存方式を変えずに、設定タブへ保存状態の見える化と診断情報コピーを追加しました。更新前と本番差し替え前には、あなたと彼氏の両方でバックアップを書き出してください。";
+      const dataMemo = [...updates.querySelectorAll(".card")].find(c=>c.querySelector("h2")?.textContent.trim()==="データ保護メモ");
+      const memoNotice = dataMemo?.querySelector(".notice");
+      if(memoNotice) memoNotice.innerHTML = "このアップデートではSupabaseのテーブル構成や保存先は変更していません。保存状態の表示と診断コピーだけを追加しています。共有機能など、相手データを読む機能はまだ入れていません。";
+    }
+
+    const copyBtn = document.getElementById("copyDiagnosticBtn");
+    if(copyBtn && !copyBtn.dataset.v059Bound){
+      copyBtn.dataset.v059Bound = "1";
+      copyBtn.onclick = copyDiagnosticInfoV059;
+    }
+    const refreshBtn = document.getElementById("refreshSyncStatusBtn");
+    if(refreshBtn && !refreshBtn.dataset.v059Bound){
+      refreshBtn.dataset.v059Bound = "1";
+      refreshBtn.onclick = ()=>{ renderSyncDiagnosticsV059(); toast("保存状態を更新しました"); };
+    }
+  }
+
+  function renderSyncDiagnosticsV059(){
+    const grid = document.getElementById("syncStatusGrid");
+    if(!grid) return;
+    const c = countsV059();
+    const loggedIn = Boolean(currentUser);
+    const localSavedAt = localStorage.getItem(LOCAL_LAST_SAVE_KEY_059) || "未取得";
+    const cloudSaved = lastCloudSavedAt || "まだなし";
+    const cloudLoaded = lastCloudLoadedAt || "まだなし";
+    const lastErr = lastDiagnosticErrorV059 || "なし";
+    grid.innerHTML = [
+      statusCellV059("ログイン", loggedIn ? `ログイン中：${maskEmailV059(currentUser?.email)}` : "未ログイン", loggedIn ? "good" : "warn"),
+      statusCellV059("Supabase", cloudReadyLabelV059(), supabaseClient ? "good" : "warn"),
+      statusCellV059("通信", navigator.onLine ? "オンライン" : "オフライン", navigator.onLine ? "good" : "bad"),
+      statusCellV059("未同期", hasLocalUnsyncedChanges ? "端末に未同期あり" : "なし", hasLocalUnsyncedChanges ? "warn" : "good"),
+      statusCellV059("ローカル保存", localSavedAt, localSavedAt === "未取得" ? "warn" : "good"),
+      statusCellV059("クラウド保存", cloudSaved, lastCloudSavedAt ? "good" : "warn"),
+      statusCellV059("クラウド読込", cloudLoaded, lastCloudLoadedAt ? "good" : "warn"),
+      statusCellV059("データ件数", `教材${c.materials} / 記録${c.records} / 未完了${c.undoneTasks}`, ""),
+      statusCellV059("保存データ版", String(state?.version ?? "不明"), ""),
+      statusCellV059("最終エラー", lastErr, lastDiagnosticErrorV059 ? "bad" : "good")
+    ].join("");
+  }
+
+  const oldUpdateAuthUIV059 = updateAuthUI;
+  updateAuthUI = function(message, kind=""){
+    rememberDiagnosticErrorV059(message);
+    const result = oldUpdateAuthUIV059.apply(this, arguments);
+    ensureV059Dom();
+    renderSyncDiagnosticsV059();
+    return result;
+  };
+
+  const oldSaveLocalOnlyV059 = saveLocalOnly;
+  saveLocalOnly = function(){
+    const result = oldSaveLocalOnlyV059.apply(this, arguments);
+    try{ localStorage.setItem(LOCAL_LAST_SAVE_KEY_059, nowLabelV059()); }catch(e){}
+    renderSyncDiagnosticsV059();
+    return result;
+  };
+
+  const oldRenderV059 = render;
+  render = function(){
+    const result = oldRenderV059.apply(this, arguments);
+    ensureV059Dom();
+    renderSyncDiagnosticsV059();
+    return result;
+  };
+
+  const oldInitCloudV059 = initCloud;
+  initCloud = async function(){
+    const result = await oldInitCloudV059.apply(this, arguments);
+    renderSyncDiagnosticsV059();
+    return result;
+  };
+
+  const oldSaveCloudDataV059 = saveCloudData;
+  saveCloudData = async function(){
+    const result = await oldSaveCloudDataV059.apply(this, arguments);
+    renderSyncDiagnosticsV059();
+    return result;
+  };
+
+  const oldLoadCloudDataManualV059 = loadCloudDataManual;
+  loadCloudDataManual = async function(){
+    const result = await oldLoadCloudDataManualV059.apply(this, arguments);
+    renderSyncDiagnosticsV059();
+    return result;
+  };
+
+  window.addEventListener("online", renderSyncDiagnosticsV059);
+  window.addEventListener("offline", renderSyncDiagnosticsV059);
+
+  ensureV059Dom();
+  renderSyncDiagnosticsV059();
+  try { render(); } catch(err) { console.error("v0.5.9 render failed", err); rememberDiagnosticErrorV059(err.message || err); renderSyncDiagnosticsV059(); }
+})();
+
+
+/* ===== v0.6.0 sharing feature patch ===== */
+(function(){
+  const APP_VERSION_060 = "v0.6.0";
+  const SHARE_PROFILE_TABLE_060 = "study_planner_profiles";
+  const SHARE_LINK_TABLE_060 = "study_planner_share_links";
+  const SHARE_SNAPSHOT_TABLE_060 = "study_planner_shared_snapshots";
+  const SHARE_LOCAL_HINT_KEY_060 = KEY + "-sharing-last-error";
+
+  let shareProfileV060 = null;
+  let shareLinksV060 = [];
+  let sharedSnapshotsV060 = [];
+  let shareFollowersV060 = [];
+  let shareLoadingV060 = false;
+  let shareLastErrorV060 = localStorage.getItem(SHARE_LOCAL_HINT_KEY_060) || "";
+  let sharePublishTimerV060 = null;
+
+  function setShareErrorV060(message){
+    shareLastErrorV060 = message ? `${nowLabelV060()} ${message}` : "";
+    try{
+      if(shareLastErrorV060) localStorage.setItem(SHARE_LOCAL_HINT_KEY_060, shareLastErrorV060);
+      else localStorage.removeItem(SHARE_LOCAL_HINT_KEY_060);
+    }catch(e){}
+  }
+
+  function nowLabelV060(){
+    return new Date().toLocaleString("ja-JP", {hour12:false});
+  }
+
+  function sharingAvailableV060(){
+    return Boolean(currentUser && supabaseClient);
+  }
+
+  function friendlyShareErrorV060(error){
+    const raw = error?.message || String(error || "");
+    if(raw.includes(SHARE_PROFILE_TABLE_060) || raw.includes(SHARE_LINK_TABLE_060) || raw.includes(SHARE_SNAPSHOT_TABLE_060) || error?.code === "42P01"){
+      return "共有用テーブルが未作成です。ZIP内のSQLをSupabaseで実行してください。";
+    }
+    if(raw.toLowerCase().includes("row-level security") || raw.includes("permission denied") || error?.code === "42501"){
+      return "共有用テーブルのRLS設定で拒否されました。ZIP内のSQLを確認してください。";
+    }
+    return raw;
+  }
+
+  function ensureV060Styles(){
+    if(document.getElementById("v060-sharing-style")) return;
+    document.head.insertAdjacentHTML("beforeend", `<style id="v060-sharing-style">
+      .share-code-box { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px; }
+      .share-code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing:.08em; font-weight:900; padding:8px 10px; border:1px dashed var(--line); border-radius:12px; background:rgba(255,255,255,.62); }
+      .share-grid { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:8px; margin:10px 0; }
+      .share-mini { border:1px solid var(--line); border-radius:14px; padding:10px; background:rgba(255,255,255,.55); }
+      .share-mini .label { color:var(--muted); font-size:12px; }
+      .share-mini .value { font-size:18px; font-weight:900; margin-top:2px; }
+      .share-record-row { display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-top:1px solid var(--line); }
+      .share-record-row:first-child { border-top:0; }
+      .share-muted { color:var(--muted); font-size:12px; }
+      body[data-theme="dark"] .share-code, body[data-theme="dark"] .share-mini { background:#312d2a; }
+      @media (max-width:900px){ .share-grid { grid-template-columns:1fr; } }
+    </style>`);
+  }
+
+  function generateShareCodeV060(){
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const arr = new Uint32Array(10);
+    if(window.crypto && crypto.getRandomValues) crypto.getRandomValues(arr);
+    else for(let i=0;i<arr.length;i++) arr[i] = Math.floor(Math.random()*chars.length);
+    let s = "";
+    for(let i=0;i<arr.length;i++) s += chars[arr[i] % chars.length];
+    return s.slice(0,5) + "-" + s.slice(5);
+  }
+
+  function defaultDisplayNameV060(){
+    const email = currentUser?.email || "";
+    const base = email.includes("@") ? email.split("@")[0] : "ユーザー";
+    return base.slice(0,24) || "ユーザー";
+  }
+
+  function isRecordPrivateV060(r){
+    return Boolean(r?.private || r?.isPrivate || r?.sharePrivate);
+  }
+
+  function setRecordPrivateV060(recordId, value){
+    const r = state.records.find(x=>x.id===recordId);
+    if(!r) return;
+    r.private = Boolean(value);
+    save();
+    render();
+    scheduleSharedSnapshotPublishV060();
+    toast(value ? "この記録を非公開にしました" : "この記録を共有対象に戻しました");
+  }
+
+  function recordKindForShareV060(r){
+    if(typeof recordKindLabelV057 === "function") return recordKindLabelV057(r);
+    return r.type === "review" ? "復習" : "新規";
+  }
+
+  function materialScopeLabelV060(m){
+    const optional = typeof isOptionalMaterialV057 === "function" ? isOptionalMaterialV057(m) : (m?.planningMode === "optional");
+    return optional ? "プラスα" : "計画対象";
+  }
+
+  function buildSharedSnapshotV060(){
+    const visibleRecords = (Array.isArray(state.records) ? state.records : [])
+      .filter(r=>!isRecordPrivateV060(r))
+      .filter(r=>mat(r.materialId));
+    const totalMinutes = visibleRecords.reduce((s,r)=>s+Number(r.minutes||0),0);
+    const byMaterial = new Map();
+    visibleRecords.forEach(r=>{
+      const m = mat(r.materialId);
+      const key = r.materialId || "unknown";
+      const row = byMaterial.get(key) || { materialId:key, materialName:m?.name || "削除済み教材", minutes:0, recordCount:0 };
+      row.minutes += Number(r.minutes||0);
+      row.recordCount += 1;
+      byMaterial.set(key, row);
+    });
+    const materialTotals = Array.from(byMaterial.values())
+      .sort((a,b)=>b.minutes-a.minutes)
+      .slice(0,50);
+    const recentRecords = visibleRecords.slice()
+      .sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")) || String(b.createdAt||"").localeCompare(String(a.createdAt||"")))
+      .slice(0,100)
+      .map(r=>{
+        const m = mat(r.materialId);
+        return {
+          id:r.id,
+          date:r.date || "",
+          materialName:m?.name || "削除済み教材",
+          minutes:Number(r.minutes||0),
+          type:r.type === "review" ? "review" : "new",
+          typeLabel:recordKindForShareV060(r),
+          scopeLabel:materialScopeLabelV060(m)
+        };
+      });
+    const appToday = typeof today === "function" ? today() : "";
+    const todayMinutes = visibleRecords
+      .filter(r => String(r.date || "") === String(appToday || ""))
+      .reduce((sum, r) => sum + Number(r.minutes || 0), 0);
+    return {
+      version:"0.6.0",
+      displayName:shareProfileV060?.display_name || defaultDisplayNameV060(),
+      updatedAt:new Date().toISOString(),
+      appToday,
+      totals:{ totalMinutes, todayMinutes, recordCount:visibleRecords.length },
+      materialTotals,
+      recentRecords
+    };
+  }
+
+  async function ensureShareProfileV060(){
+    if(!sharingAvailableV060()) return null;
+    const { data, error } = await supabaseClient
+      .from(SHARE_PROFILE_TABLE_060)
+      .select("user_id, display_name, share_enabled, share_code, updated_at")
+      .eq("user_id", currentUser.id)
+      .maybeSingle();
+    if(error) throw error;
+    if(data){
+      shareProfileV060 = data;
+      return data;
+    }
+    const newProfile = {
+      user_id:currentUser.id,
+      display_name:defaultDisplayNameV060(),
+      share_enabled:false,
+      share_code:generateShareCodeV060(),
+      updated_at:new Date().toISOString()
+    };
+    const { data:inserted, error:insertError } = await supabaseClient
+      .from(SHARE_PROFILE_TABLE_060)
+      .insert(newProfile)
+      .select("user_id, display_name, share_enabled, share_code, updated_at")
+      .single();
+    if(insertError) throw insertError;
+    shareProfileV060 = inserted;
+    return inserted;
+  }
+
+  async function loadShareDataV060(showToast=false){
+    if(!sharingAvailableV060()){
+      shareProfileV060 = null;
+      shareLinksV060 = [];
+      sharedSnapshotsV060 = [];
+      shareFollowersV060 = [];
+      renderSharingV060();
+      return;
+    }
+    if(shareLoadingV060) return;
+    shareLoadingV060 = true;
+    renderSharingV060();
+    try{
+      await ensureShareProfileV060();
+      const { data:links, error:linksError } = await supabaseClient
+        .from(SHARE_LINK_TABLE_060)
+        .select("owner_id, viewer_id, created_at")
+        .eq("viewer_id", currentUser.id)
+        .order("created_at", { ascending:false });
+      if(linksError) throw linksError;
+      shareLinksV060 = Array.isArray(links) ? links : [];
+
+      const { data:followers, error:followersError } = await supabaseClient
+        .from(SHARE_LINK_TABLE_060)
+        .select("owner_id, viewer_id, created_at")
+        .eq("owner_id", currentUser.id)
+        .order("created_at", { ascending:false });
+      if(followersError) throw followersError;
+      shareFollowersV060 = Array.isArray(followers) ? followers : [];
+
+      const ownerIds = shareLinksV060.map(x=>x.owner_id).filter(Boolean);
+      if(ownerIds.length){
+        const { data:snapshots, error:snapError } = await supabaseClient
+          .from(SHARE_SNAPSHOT_TABLE_060)
+          .select("user_id, data, updated_at")
+          .in("user_id", ownerIds)
+          .order("updated_at", { ascending:false });
+        if(snapError) throw snapError;
+        sharedSnapshotsV060 = Array.isArray(snapshots) ? snapshots : [];
+      } else {
+        sharedSnapshotsV060 = [];
+      }
+      setShareErrorV060("");
+      if(showToast) toast("共有データを更新しました");
+    }catch(e){
+      const msg = friendlyShareErrorV060(e);
+      console.error(e);
+      setShareErrorV060(msg);
+      if(showToast) alert("共有データの読み込みに失敗しました："+msg);
+    }finally{
+      shareLoadingV060 = false;
+      renderSharingV060();
+    }
+  }
+
+  async function saveShareProfileV060(){
+    if(!sharingAvailableV060()) { alert("先にログインしてください。"); return; }
+    const name = String(document.getElementById("shareDisplayName")?.value || "").trim() || defaultDisplayNameV060();
+    const enabled = Boolean(document.getElementById("shareEnabled")?.checked);
+    const code = shareProfileV060?.share_code || generateShareCodeV060();
+    try{
+      const { data, error } = await supabaseClient
+        .from(SHARE_PROFILE_TABLE_060)
+        .upsert({ user_id:currentUser.id, display_name:name, share_enabled:enabled, share_code:code, updated_at:new Date().toISOString() }, { onConflict:"user_id" })
+        .select("user_id, display_name, share_enabled, share_code, updated_at")
+        .single();
+      if(error) throw error;
+      shareProfileV060 = data;
+      setShareErrorV060("");
+      if(enabled) await publishSharedSnapshotV060(false);
+      renderSharingV060();
+      toast("共有設定を保存しました");
+    }catch(e){
+      const msg = friendlyShareErrorV060(e);
+      setShareErrorV060(msg);
+      renderSharingV060();
+      alert("共有設定の保存に失敗しました："+msg);
+    }
+  }
+
+  async function regenerateShareCodeV060(){
+    if(!sharingAvailableV060()) { alert("先にログインしてください。"); return; }
+    if(!confirm("共有コードを作り直します。既に追加済みの相手には影響しませんが、古いコードでは新規追加できなくなります。")) return;
+    try{
+      await ensureShareProfileV060();
+      const code = generateShareCodeV060();
+      const { data, error } = await supabaseClient
+        .from(SHARE_PROFILE_TABLE_060)
+        .update({ share_code:code, updated_at:new Date().toISOString() })
+        .eq("user_id", currentUser.id)
+        .select("user_id, display_name, share_enabled, share_code, updated_at")
+        .single();
+      if(error) throw error;
+      shareProfileV060 = data;
+      renderSharingV060();
+      toast("共有コードを作り直しました");
+    }catch(e){
+      const msg = friendlyShareErrorV060(e);
+      setShareErrorV060(msg);
+      renderSharingV060();
+      alert("共有コードの更新に失敗しました："+msg);
+    }
+  }
+
+  async function copyShareCodeV060(){
+    const code = shareProfileV060?.share_code;
+    if(!code){ alert("共有コードがまだありません。共有設定を保存してください。"); return; }
+    try{
+      if(navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(code);
+      else {
+        const ta = document.createElement("textarea");
+        ta.value = code;
+        ta.style.position = "fixed";
+        ta.style.top = "-1000px";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        ta.remove();
+      }
+      toast("共有コードをコピーしました");
+    }catch(e){ alert("コピーに失敗しました。共有コードを手動でコピーしてください。"); }
+  }
+
+  async function addSharePartnerByCodeV060(){
+    if(!sharingAvailableV060()) { alert("先にログインしてください。"); return; }
+    const input = document.getElementById("partnerShareCode");
+    const code = String(input?.value || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if(code.length < 6){ alert("相手の共有コードを入れてください。"); return; }
+    const normalized = code.length > 5 ? code.slice(0,5)+"-"+code.slice(5) : code;
+    try{
+      const { data:owner, error:findError } = await supabaseClient
+        .from(SHARE_PROFILE_TABLE_060)
+        .select("user_id, display_name, share_enabled, share_code")
+        .eq("share_code", normalized)
+        .eq("share_enabled", true)
+        .maybeSingle();
+      if(findError) throw findError;
+      if(!owner){ alert("共有ONの相手が見つかりません。コードと相手側の共有ONを確認してください。"); return; }
+      if(owner.user_id === currentUser.id){ alert("自分の共有コードは追加できません。"); return; }
+      const { error:insertError } = await supabaseClient
+        .from(SHARE_LINK_TABLE_060)
+        .upsert({ owner_id:owner.user_id, viewer_id:currentUser.id, created_at:new Date().toISOString() }, { onConflict:"owner_id,viewer_id" });
+      if(insertError) throw insertError;
+      if(input) input.value = "";
+      await loadShareDataV060(false);
+      toast("共有相手を追加しました");
+    }catch(e){
+      const msg = friendlyShareErrorV060(e);
+      setShareErrorV060(msg);
+      renderSharingV060();
+      alert("共有相手の追加に失敗しました："+msg);
+    }
+  }
+
+  async function removeSharePartnerV060(ownerId){
+    if(!sharingAvailableV060()) return;
+    if(!confirm("この相手の共有閲覧を解除しますか？")) return;
+    try{
+      const { error } = await supabaseClient
+        .from(SHARE_LINK_TABLE_060)
+        .delete()
+        .eq("owner_id", ownerId)
+        .eq("viewer_id", currentUser.id);
+      if(error) throw error;
+      await loadShareDataV060(false);
+      toast("共有閲覧を解除しました");
+    }catch(e){
+      const msg = friendlyShareErrorV060(e);
+      setShareErrorV060(msg);
+      renderSharingV060();
+      alert("解除に失敗しました："+msg);
+    }
+  }
+
+  async function publishSharedSnapshotV060(showToast=true){
+    if(!sharingAvailableV060()) { if(showToast) alert("先にログインしてください。"); return false; }
+    try{
+      await ensureShareProfileV060();
+      if(!shareProfileV060?.share_enabled){
+        if(showToast) alert("共有がOFFです。共有設定でONにしてから反映してください。");
+        renderSharingV060();
+        return false;
+      }
+      const snapshot = buildSharedSnapshotV060();
+      const { error } = await supabaseClient
+        .from(SHARE_SNAPSHOT_TABLE_060)
+        .upsert({ user_id:currentUser.id, data:snapshot, updated_at:new Date().toISOString() }, { onConflict:"user_id" });
+      if(error) throw error;
+      setShareErrorV060("");
+      if(showToast) toast("共有データを更新しました");
+      return true;
+    }catch(e){
+      const msg = friendlyShareErrorV060(e);
+      setShareErrorV060(msg);
+      renderSharingV060();
+      if(showToast) alert("共有データの更新に失敗しました："+msg);
+      return false;
+    }
+  }
+
+  function scheduleSharedSnapshotPublishV060(){
+    if(!sharingAvailableV060() || !shareProfileV060?.share_enabled) return;
+    clearTimeout(sharePublishTimerV060);
+    sharePublishTimerV060 = setTimeout(()=>publishSharedSnapshotV060(false), 1400);
+  }
+
+  function ensureV060Dom(){
+    ensureV060Styles();
+    document.title = "学習負荷プランナー v0.6.0";
+    const h1 = document.querySelector("h1");
+    if(h1) h1.textContent = "学習負荷プランナー v0.6.0";
+    const sub = document.querySelector("header .sub");
+    if(sub) sub.textContent = "閲覧専用共有、記録ごとの非公開、共有用スナップショットに対応。";
+
+    const tabs = document.querySelector(".tabs");
+    if(tabs && !document.querySelector('.tab[data-tab="sharing"]')){
+      const updatesTab = document.querySelector('.tab[data-tab="updates"]');
+      const btn = document.createElement("button");
+      btn.className = "tab";
+      btn.dataset.tab = "sharing";
+      btn.textContent = "共有";
+      if(updatesTab) tabs.insertBefore(btn, updatesTab);
+      else tabs.appendChild(btn);
+      btn.onclick = ()=>{ switchTab("sharing"); renderSharingV060(); };
+    }
+
+    const main = document.querySelector("main");
+    if(main && !document.getElementById("sharing")){
+      const updates = document.getElementById("updates");
+      const section = document.createElement("section");
+      section.id = "sharing";
+      section.className = "screen hidden";
+      section.innerHTML = `
+        <div class="grid">
+          <div class="card span-12">
+            <div class="item-head"><h2>共有を見る</h2><div class="actions"><button type="button" class="secondary" id="refreshSharingViewBtn">共有データを更新</button></div></div>
+            <div id="sharedViewStatus" class="notice">ログイン中に、追加した相手の共有記録を閲覧できます。</div>
+          </div>
+          <div class="card span-12">
+            <div id="sharedSnapshotsList" class="list"></div>
+          </div>
+        </div>`;
+      if(updates) main.insertBefore(section, updates);
+      else main.appendChild(section);
+    }
+
+    const recordMemo = document.getElementById("recMemo");
+    if(recordMemo && !document.getElementById("recPrivate")){
+      const label = document.createElement("label");
+      label.className = "checkline";
+      label.innerHTML = '<input id="recPrivate" type="checkbox">この記録は共有しない';
+      const memoLabel = recordMemo.closest("label");
+      if(memoLabel) memoLabel.insertAdjacentElement("afterend", label);
+    }
+
+    const settingsGrid = document.querySelector("#settings .grid");
+    if(settingsGrid && !document.getElementById("sharingSettingsPanel")){
+      const cloudCard = [...settingsGrid.querySelectorAll(".card")].find(c => c.querySelector("h2")?.textContent.trim() === "クラウド同期");
+      const panel = document.createElement("div");
+      panel.className = "card span-12";
+      panel.id = "sharingSettingsPanel";
+      panel.innerHTML = `
+        <h2>共有設定</h2>
+        <div class="notice warn">共有は閲覧専用です。相手に見せるのは共有用に加工したデータだけで、メモ・設定・診断情報・非公開記録は含めません。</div>
+        <div class="divider"></div>
+        <div class="row2">
+          <label>表示名 <input id="shareDisplayName" placeholder="例：ほのか"></label>
+          <label class="checkline" style="align-self:end;"><input id="shareEnabled" type="checkbox">自分の記録共有をONにする</label>
+        </div>
+        <div class="share-code-box">
+          <span class="small">自分の共有コード</span>
+          <span class="share-code" id="myShareCode">未作成</span>
+          <button type="button" class="secondary" id="copyShareCodeBtn">コピー</button>
+          <button type="button" class="ghost" id="regenerateShareCodeBtn">作り直す</button>
+        </div>
+        <div class="actions" style="margin-top:10px;">
+          <button type="button" id="saveShareProfileBtn">共有設定を保存</button>
+          <button type="button" class="secondary" id="publishShareSnapshotBtn">共有データを今すぐ更新</button>
+        </div>
+        <p class="small" id="shareSettingsHint" style="margin-top:8px;">共有ONでも、記録ごとの「この記録は共有しない」は反映されます。</p>
+        <div class="divider"></div>
+        <h3>相手の共有を見る</h3>
+        <div class="row2">
+          <label>相手の共有コード <input id="partnerShareCode" placeholder="ABCDE-12345"></label>
+          <div class="actions" style="align-self:end;"><button type="button" class="secondary" id="addSharePartnerBtn">相手を追加</button></div>
+        </div>
+        <div id="sharePartnersList" class="list" style="margin-top:10px;"></div>
+        <div class="divider"></div>
+        <div id="shareStatusBox" class="notice">共有状態を確認中です。</div>`;
+      if(cloudCard) cloudCard.insertAdjacentElement("afterend", panel);
+      else settingsGrid.insertBefore(panel, settingsGrid.firstChild);
+    }
+
+    const updates = document.querySelector("#updates .grid");
+    if(updates && !document.getElementById("updateV060Card")){
+      updates.insertAdjacentHTML("afterbegin", `
+        <div class="card span-12" id="updateV060Card">
+          <h2>v0.6.0</h2>
+          <div class="list">
+            <div class="item"><div class="title">閲覧専用共有の土台を追加</div><div class="small">共有ONのユーザーが作った共有用スナップショットだけを、追加した相手が見られるようにしました。</div></div>
+            <div class="item"><div class="title">メイン保存データは直接共有しない</div><div class="small">study_planner_dataは本人用のまま維持し、相手には教材名・日付・記録時間・合計時間だけを渡します。</div></div>
+            <div class="item"><div class="title">記録ごとの非公開に対応</div><div class="small">記録時に「この記録は共有しない」を選べます。既存記録は初期状態では共有対象です。</div></div>
+          </div>
+        </div>`);
+    }
+    if(updates){
+      const topNotice = updates.querySelector(".notice.good");
+      if(topNotice) topNotice.innerHTML = "v0.6.0では、メイン保存データを直接読ませず、共有用に加工したスナップショットだけを相手が閲覧できる共有機能を追加しました。本番反映前に必ずバックアップを書き出してください。";
+      const dataMemo = [...updates.querySelectorAll(".card")].find(c=>c.querySelector("h2")?.textContent.trim()==="データ保護メモ");
+      const memoNotice = dataMemo?.querySelector(".notice");
+      if(memoNotice) memoNotice.innerHTML = "共有機能ではSupabaseに新しい3テーブルを追加します。既存のstudy_planner_dataと保存JSON本体は維持しますが、記録には非公開フラグが追加される場合があります。";
+    }
+
+    bindV060Events();
+  }
+
+  function bindV060Events(){
+    const refresh = document.getElementById("refreshSharingViewBtn");
+    if(refresh && !refresh.dataset.v060Bound){ refresh.dataset.v060Bound="1"; refresh.onclick=()=>loadShareDataV060(true); }
+    const saveBtn = document.getElementById("saveShareProfileBtn");
+    if(saveBtn && !saveBtn.dataset.v060Bound){ saveBtn.dataset.v060Bound="1"; saveBtn.onclick=saveShareProfileV060; }
+    const publishBtn = document.getElementById("publishShareSnapshotBtn");
+    if(publishBtn && !publishBtn.dataset.v060Bound){ publishBtn.dataset.v060Bound="1"; publishBtn.onclick=()=>publishSharedSnapshotV060(true); }
+    const addBtn = document.getElementById("addSharePartnerBtn");
+    if(addBtn && !addBtn.dataset.v060Bound){ addBtn.dataset.v060Bound="1"; addBtn.onclick=addSharePartnerByCodeV060; }
+    const copyBtn = document.getElementById("copyShareCodeBtn");
+    if(copyBtn && !copyBtn.dataset.v060Bound){ copyBtn.dataset.v060Bound="1"; copyBtn.onclick=copyShareCodeV060; }
+    const regenBtn = document.getElementById("regenerateShareCodeBtn");
+    if(regenBtn && !regenBtn.dataset.v060Bound){ regenBtn.dataset.v060Bound="1"; regenBtn.onclick=regenerateShareCodeV060; }
+  }
+
+  function renderSharingSettingsV060(){
+    const nameEl = document.getElementById("shareDisplayName");
+    const enabledEl = document.getElementById("shareEnabled");
+    const codeEl = document.getElementById("myShareCode");
+    const hint = document.getElementById("shareSettingsHint");
+    const status = document.getElementById("shareStatusBox");
+    if(nameEl && document.activeElement !== nameEl) nameEl.value = shareProfileV060?.display_name || defaultDisplayNameV060();
+    if(enabledEl) enabledEl.checked = Boolean(shareProfileV060?.share_enabled);
+    if(codeEl) codeEl.textContent = shareProfileV060?.share_code || "未作成";
+    if(hint){
+      const publicCount = (state.records||[]).filter(r=>!isRecordPrivateV060(r)).length;
+      const privateCount = (state.records||[]).filter(r=>isRecordPrivateV060(r)).length;
+      hint.textContent = `共有対象の記録：${publicCount}件 / 非公開：${privateCount}件。共有データにはメモは入りません。`;
+    }
+    if(status){
+      status.classList.remove("good","warn","bad");
+      if(!currentUser){ status.classList.add("warn"); status.textContent = "未ログインです。共有設定はログイン中だけ使えます。"; }
+      else if(shareLastErrorV060){ status.classList.add("bad"); status.textContent = shareLastErrorV060; }
+      else if(shareProfileV060?.share_enabled){ status.classList.add("good"); status.textContent = `共有ON。あなたを見る相手：${shareFollowersV060.length}人。`; }
+      else { status.classList.add("warn"); status.textContent = "共有OFF。相手はあなたの記録を見られません。"; }
+    }
+
+    const partners = document.getElementById("sharePartnersList");
+    if(partners){
+      partners.innerHTML = "";
+      if(!currentUser){ partners.innerHTML = '<div class="empty">ログインすると共有相手を追加できます。</div>'; }
+      else if(!shareLinksV060.length){ partners.innerHTML = '<div class="empty">まだ共有相手を追加していません。</div>'; }
+      else {
+        shareLinksV060.forEach(link=>{
+          const snap = sharedSnapshotsV060.find(s=>s.user_id===link.owner_id);
+          const name = snap?.data?.displayName || "共有相手";
+          const item = document.createElement("div");
+          item.className = "item";
+          item.innerHTML = `<div class="item-head"><div><div class="title">${esc(name)}</div><div class="small">追加日：${esc(new Date(link.created_at).toLocaleString("ja-JP", {hour12:false}))}</div></div><button type="button" class="ghost" data-remove-share-owner="${esc(link.owner_id)}">解除</button></div>`;
+          item.querySelector("[data-remove-share-owner]").onclick = ()=>removeSharePartnerV060(link.owner_id);
+          partners.appendChild(item);
+        });
+      }
+    }
+  }
+
+  function renderSharedViewV060(){
+    const box = document.getElementById("sharedSnapshotsList");
+    const status = document.getElementById("sharedViewStatus");
+    if(status){
+      status.classList.remove("good","warn","bad");
+      if(!currentUser){ status.classList.add("warn"); status.textContent = "未ログインです。ログインすると追加した相手の共有記録を見られます。"; }
+      else if(shareLastErrorV060){ status.classList.add("bad"); status.textContent = shareLastErrorV060; }
+      else if(shareLoadingV060){ status.classList.add("warn"); status.textContent = "共有データを読み込み中です。"; }
+      else { status.classList.add("good"); status.textContent = `追加済みの共有相手：${shareLinksV060.length}人。2人合計は表示しません。`; }
+    }
+    if(!box) return;
+    box.innerHTML = "";
+    if(!currentUser){ box.innerHTML = '<div class="empty">ログインしてください。</div>'; return; }
+    if(!shareLinksV060.length){ box.innerHTML = '<div class="empty">設定タブで相手の共有コードを追加すると、ここに表示されます。</div>'; return; }
+    if(!sharedSnapshotsV060.length){ box.innerHTML = '<div class="empty">相手の共有データがまだありません。相手側で共有ONと「共有データを今すぐ更新」を確認してください。</div>'; return; }
+    sharedSnapshotsV060.forEach(row=>{
+      const data = row.data || {};
+      const totals = data.totals || {};
+      const item = document.createElement("div");
+      item.className = "item";
+      const mats = Array.isArray(data.materialTotals) ? data.materialTotals.slice(0,8) : [];
+      const recs = Array.isArray(data.recentRecords) ? data.recentRecords.slice(0,12) : [];
+      const snapshotToday = String(data.appToday || "");
+      const todayMinutes = Number.isFinite(Number(totals.todayMinutes))
+        ? Number(totals.todayMinutes || 0)
+        : (Array.isArray(data.recentRecords) ? data.recentRecords : [])
+          .filter(r => String(r.date || "") === snapshotToday)
+          .reduce((sum, r) => sum + Number(r.minutes || 0), 0);
+      item.innerHTML = `
+        <div class="item-head">
+          <div><div class="title">${esc(data.displayName || "共有相手")}</div><div class="small">最終更新：${esc(row.updated_at ? new Date(row.updated_at).toLocaleString("ja-JP", {hour12:false}) : "不明")}</div></div>
+          <span class="badge blue">閲覧専用</span>
+        </div>
+        <div class="share-grid">
+          <div class="share-mini"><div class="label">総勉強時間</div><div class="value">${fmtMin(totals.totalMinutes || 0)}</div></div>
+          <div class="share-mini"><div class="label">今日の勉強時間</div><div class="value">${fmtMin(todayMinutes)}</div></div>
+          <div class="share-mini"><div class="label">記録数</div><div class="value">${Number(totals.recordCount || 0)}件</div></div>
+        </div>
+        <div class="grid" style="margin-top:10px;">
+          <div class="span-6"><h3>教材別</h3><div class="list" data-share-materials></div></div>
+          <div class="span-6"><h3>最近の記録</h3><div class="list" data-share-records></div></div>
+        </div>`;
+      const matBox = item.querySelector("[data-share-materials]");
+      if(!mats.length) matBox.innerHTML = '<div class="empty">共有対象の教材記録はありません。</div>';
+      else mats.forEach(m=>{
+        const div = document.createElement("div");
+        div.className = "share-record-row";
+        div.innerHTML = `<div><strong>${esc(m.materialName || "教材")}</strong><div class="share-muted">${Number(m.recordCount || 0)}件</div></div><div><strong>${fmtMin(m.minutes || 0)}</strong></div>`;
+        matBox.appendChild(div);
+      });
+      const recBox = item.querySelector("[data-share-records]");
+      if(!recs.length) recBox.innerHTML = '<div class="empty">共有対象の記録はありません。</div>';
+      else recs.forEach(r=>{
+        const div = document.createElement("div");
+        div.className = "share-record-row";
+        div.innerHTML = `<div><strong>${esc(r.materialName || "教材")}</strong><div class="share-muted">${esc(r.date || "")} / ${esc(r.typeLabel || (r.type==="review"?"復習":"新規"))} / ${esc(r.scopeLabel || "")}</div></div><div><strong>${fmtMin(r.minutes || 0)}</strong></div>`;
+        recBox.appendChild(div);
+      });
+      box.appendChild(item);
+    });
+  }
+
+  function renderSharingV060(){
+    ensureV060Dom();
+    renderSharingSettingsV060();
+    renderSharedViewV060();
+  }
+
+  function overrideRecordItemV060(){
+    recordItem = function(r){
+      const m=mat(r.materialId);
+      const div=document.createElement("div");
+      div.className="item";
+      const noRange = (typeof isNoRangeMaterialV057 === "function" && m) ? isNoRangeMaterialV057(m) : (typeof isNoRangeMaterial === "function" && m ? isNoRangeMaterial(m) : false);
+      const range = noRange ? "範囲なし" : (m && r.start!=null && r.end!=null ? rangeText(m,r.start,r.end) : r.start!=null && r.end!=null ? `${r.start}〜${r.end}` : "範囲なし");
+      const kind = recordKindForShareV060(r);
+      const optional = (typeof isOptionalMaterialV057 === "function" && m) ? isOptionalMaterialV057(m) : (typeof isOptionalMaterial === "function" && m ? isOptionalMaterial(m) : false);
+      const privateFlag = isRecordPrivateV060(r);
+      div.innerHTML=`
+        <div class="item-head"><div><div class="title">${esc(m?m.name:"削除済み教材")}</div><div class="small">${esc(r.date)} / ${esc(kind)} / ${esc(range)}</div></div><span class="badge ${r.weak==="weak"||r.weak==="redo"?"bad":r.weak==="uncertain"?"warn":"good"}">${weakLabel[r.weak||"ok"]}</span></div>
+        <div class="badges"><span class="badge">${fmtMin(r.minutes)}</span><span class="badge ${optional?"blue":""}">${optional?"プラスα":"計画対象"}</span><span class="badge">難易度 ${r.difficulty}</span><span class="badge">集中度 ${r.focus}</span><span class="badge ${privateFlag?"warn":"good"}">${privateFlag?"共有しない":"共有対象"}</span></div>
+        ${r.memo?`<div class="small">メモ：${esc(r.memo)}</div>`:""}
+        <div class="actions" style="margin-top:8px"><button class="secondary" data-toggle-private-rec="${esc(r.id)}">${privateFlag?"共有対象に戻す":"共有しない"}</button><button class="ghost" data-delrec="${esc(r.id)}">削除</button></div>`;
+      div.querySelector("[data-delrec]").onclick=()=>deleteRecord(r.id);
+      div.querySelector("[data-toggle-private-rec]").onclick=()=>setRecordPrivateV060(r.id, !privateFlag);
+      return div;
+    };
+  }
+
+  function overrideRecordFormV060(){
+    const recordForm=document.getElementById("recordForm");
+    if(!recordForm) return;
+    recordForm.onsubmit=e=>{
+      e.preventDefault();
+      const taskId=document.getElementById("recordTaskId").value;
+      const materialId=document.getElementById("recMaterial").value;
+      const m=mat(materialId);
+      if(!m){ alert("教材を選んでください。"); return; }
+      const noRange = (typeof isNoRangeMaterialV057 === "function") ? isNoRangeMaterialV057(m) : (typeof isNoRangeMaterial === "function" ? isNoRangeMaterial(m) : false);
+      const record={id:id("rec"),materialId,type:document.getElementById("recType").value,date:document.getElementById("recDate").value||today(),start:null,end:null,minutes:Number(document.getElementById("recMinutes").value),difficulty:Number(document.getElementById("recDiff").value),focus:Number(document.getElementById("recFocus").value),weak:document.getElementById("recWeak").value,memo:document.getElementById("recMemo").value.trim(),private:Boolean(document.getElementById("recPrivate")?.checked),taskId:taskId||null,createdAt:new Date().toISOString()};
+      if(record.minutes<=0){ alert("時間を入れてください。"); return; }
+      if(!noRange){
+        const startVal=document.getElementById("recStart").value;
+        const endVal=document.getElementById("recEnd").value;
+        if(startVal==="" || endVal===""){ alert("範囲開始と範囲終了を入れてください。"); return; }
+        record.start=Number(startVal); record.end=Number(endVal);
+        if(record.start>record.end) [record.start,record.end]=[record.end,record.start];
+        const inTarget = intersectAny({start:record.start,end:record.end}, m.ranges||[]);
+        if(!inTarget.length && !confirm("この範囲は教材の対象範囲外です。それでも記録しますか？")) return;
+        if(record.type==="new"){
+          const overlap = intersectAny({start:record.start,end:record.end}, completedRanges(record.materialId));
+          if(overlap.length){ const txt=overlap.map(r=>rangeText(m,r.start,r.end)).join(", "); if(!confirm(`すでに記録済みの範囲と重なっています：${txt}\nそれでも記録しますか？`)) return; }
+        }
+      }
+      state.records.push(record);
+      if(record.type==="new" && document.getElementById("recAutoReview").checked) makeReviewTasks(record);
+      if(taskId){ const t=state.tasks.find(x=>x.id===taskId); if(t){ t.done=true; t.doneAt=new Date().toISOString(); t.recordId=record.id; } }
+      save();
+      document.getElementById("recordForm").reset();
+      document.getElementById("recordTitle").textContent="学習を記録";
+      document.getElementById("recordTaskId").value="";
+      document.getElementById("recDate").value=today();
+      document.getElementById("recDiff").value=3;
+      document.getElementById("recFocus").value=3;
+      document.getElementById("recWeak").value="ok";
+      document.getElementById("recAutoReview").checked=true;
+      const rp=document.getElementById("recPrivate"); if(rp) rp.checked=false;
+      resetStopwatch();
+      render(); toast("記録しました");
+      scheduleSharedSnapshotPublishV060();
+    };
+  }
+
+  const oldSwitchTabV060 = switchTab;
+  switchTab = function(tab){
+    oldSwitchTabV060.apply(this, arguments);
+    if(tab === "sharing") renderSharingV060();
+  };
+
+  const oldRenderV060 = render;
+  render = function(){
+    const result = oldRenderV060.apply(this, arguments);
+    ensureV060Dom();
+    overrideRecordItemV060();
+    overrideRecordFormV060();
+    renderSharingV060();
+    return result;
+  };
+
+  const oldUpdateAuthUIV060 = updateAuthUI;
+  updateAuthUI = function(){
+    const result = oldUpdateAuthUIV060.apply(this, arguments);
+    ensureV060Dom();
+    renderSharingV060();
+    return result;
+  };
+
+  const oldInitCloudV060 = initCloud;
+  initCloud = async function(){
+    const result = await oldInitCloudV060.apply(this, arguments);
+    if(currentUser && supabaseClient) await loadShareDataV060(false);
+    else renderSharingV060();
+    return result;
+  };
+
+  const oldSaveCloudDataV060 = saveCloudData;
+  saveCloudData = async function(){
+    const result = await oldSaveCloudDataV060.apply(this, arguments);
+    scheduleSharedSnapshotPublishV060();
+    return result;
+  };
+
+  window.addEventListener("online", ()=>loadShareDataV060(false));
+
+  ensureV060Dom();
+  overrideRecordItemV060();
+  overrideRecordFormV060();
+  try{ render(); }catch(e){ console.error("v0.6.0 initial render failed", e); }
+  if(currentUser && supabaseClient) loadShareDataV060(false);
+})();
+
 </script>
 
 </body>
