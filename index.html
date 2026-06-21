@@ -3623,7 +3623,7 @@ initCloud();
           }
         }
         state.records.push(record);
-        if(record.type==="new" && document.getElementById("recAutoReview").checked) makeReviewTasks(record);
+        if(!noRange && record.type==="new" && document.getElementById("recAutoReview").checked) makeReviewTasks(record);
         if(taskId){ const t=state.tasks.find(x=>x.id===taskId); if(t){ t.done=true; t.doneAt=new Date().toISOString(); t.recordId=record.id; } }
         save();
         document.getElementById("recordForm").reset();
@@ -3959,7 +3959,7 @@ initCloud();
 
 /* v0.5.9 patch: save-status visibility and diagnostic copy, no data schema change */
 (function(){
-  const APP_VERSION_059 = "0.6.0";
+  const APP_VERSION_059 = "0.5.9";
   const LOCAL_LAST_SAVE_KEY_059 = KEY + "-last-local-saved-at";
   let lastDiagnosticErrorV059 = "";
 
@@ -4040,7 +4040,6 @@ initCloud();
       cloudUpdatedAt: state?._cloudUpdatedAt || "",
       counts: c,
       lastDiagnosticError: lastDiagnosticErrorV059 || "",
-      lastSharingError: localStorage.getItem(KEY + "-sharing-last-error") || "",
       userAgent: navigator.userAgent
     };
     return "学習負荷プランナー診断情報\n" + JSON.stringify(info, null, 2);
@@ -4151,7 +4150,7 @@ initCloud();
       statusCellV059("クラウド保存", cloudSaved, lastCloudSavedAt ? "good" : "warn"),
       statusCellV059("クラウド読込", cloudLoaded, lastCloudLoadedAt ? "good" : "warn"),
       statusCellV059("データ件数", `教材${c.materials} / 記録${c.records} / 未完了${c.undoneTasks}`, ""),
-      statusCellV059("メインデータ形式版", String(state?.version ?? "不明"), ""),
+      statusCellV059("保存データ版", String(state?.version ?? "不明"), ""),
       statusCellV059("最終エラー", lastErr, lastDiagnosticErrorV059 ? "bad" : "good")
     ].join("");
   }
@@ -4245,15 +4244,11 @@ initCloud();
 
   function friendlyShareErrorV060(error){
     const raw = error?.message || String(error || "");
-    const lower = raw.toLowerCase();
-    if(lower.includes("row-level security") || lower.includes("permission denied") || error?.code === "42501"){
-      return "共有用テーブルへの権限が不足しています。ZIP内のSQLをもう一度Supabaseで実行してください。";
+    if(raw.includes(SHARE_PROFILE_TABLE_060) || raw.includes(SHARE_LINK_TABLE_060) || raw.includes(SHARE_SNAPSHOT_TABLE_060) || error?.code === "42P01"){
+      return "共有用テーブルが未作成です。ZIP内のSQLをSupabaseで実行してください。";
     }
-    if(error?.code === "42P01" || error?.code === "PGRST205" || lower.includes("schema cache") || lower.includes("could not find") || lower.includes("not found")){
-      return "共有用テーブルがAPI側にまだ認識されていません。ZIP内のSQLをもう一度実行し、PostgREST schema cacheを更新してください。";
-    }
-    if(raw.includes(SHARE_PROFILE_TABLE_060) || raw.includes(SHARE_LINK_TABLE_060) || raw.includes(SHARE_SNAPSHOT_TABLE_060)){
-      return raw;
+    if(raw.toLowerCase().includes("row-level security") || raw.includes("permission denied") || error?.code === "42501"){
+      return "共有用テーブルのRLS設定で拒否されました。ZIP内のSQLを確認してください。";
     }
     return raw;
   }
@@ -4311,12 +4306,7 @@ initCloud();
   }
 
   function materialScopeLabelV060(m){
-    const optional = Boolean(m && (
-      m.planningMode === "optional" ||
-      m.scope === "optional" ||
-      m.isOptional === true ||
-      m.optional === true
-    ));
+    const optional = Boolean(m && (m.planningMode === "optional" || m.scope === "optional" || m.isOptional === true || m.optional === true));
     return optional ? "プラスα" : "計画対象";
   }
 
@@ -4325,10 +4315,6 @@ initCloud();
       .filter(r=>!isRecordPrivateV060(r))
       .filter(r=>mat(r.materialId));
     const totalMinutes = visibleRecords.reduce((s,r)=>s+Number(r.minutes||0),0);
-    const todayKey = typeof today === "function" ? today() : new Date().toISOString().slice(0,10);
-    const todayMinutes = visibleRecords
-      .filter(r=>String(r.date||"") === todayKey)
-      .reduce((s,r)=>s+Number(r.minutes||0),0);
     const byMaterial = new Map();
     visibleRecords.forEach(r=>{
       const m = mat(r.materialId);
@@ -4361,7 +4347,7 @@ initCloud();
       displayName:shareProfileV060?.display_name || defaultDisplayNameV060(),
       updatedAt:new Date().toISOString(),
       appToday: typeof today === "function" ? today() : "",
-      totals:{ totalMinutes, todayMinutes, recordCount:visibleRecords.length, materialCount:materialTotals.length },
+      totals:{ totalMinutes, todayMinutes:visibleRecords.filter(r=>String(r.date||"") === (typeof today === "function" ? today() : "")).reduce((sum,r)=>sum+Number(r.minutes||0),0), recordCount:visibleRecords.length, materialCount:materialTotals.length },
       materialTotals,
       recentRecords
     };
@@ -4797,7 +4783,7 @@ initCloud();
         </div>
         <div class="share-grid">
           <div class="share-mini"><div class="label">総勉強時間</div><div class="value">${fmtMin(totals.totalMinutes || 0)}</div></div>
-          <div class="share-mini"><div class="label">今日の勉強時間</div><div class="value">${fmtMin(totals.todayMinutes ?? recs.filter(r=>String(r.date||"") === (data.appToday || (typeof today === "function" ? today() : ""))).reduce((s,r)=>s+Number(r.minutes||0),0))}</div></div>
+          <div class="share-mini"><div class="label">今日の勉強時間</div><div class="value">${fmtMin(Number(totals.todayMinutes || 0) || recs.filter(r=>String(r.date||"") === String(data.appToday || (typeof today === "function" ? today() : ""))).reduce((sum,r)=>sum+Number(r.minutes||0),0))}</div></div>
           <div class="share-mini"><div class="label">記録数</div><div class="value">${Number(totals.recordCount || 0)}件</div></div>
         </div>
         <div class="grid" style="margin-top:10px;">
@@ -4835,7 +4821,7 @@ initCloud();
       const m=mat(r.materialId);
       const div=document.createElement("div");
       div.className="item";
-      const noRange = (typeof isNoRangeMaterialV057 === "function" && m) ? isNoRangeMaterialV057(m) : (typeof isNoRangeMaterial === "function" && m ? isNoRangeMaterial(m) : false);
+      const noRange = Boolean(m && (m.rangeMode === "none" || m.noRange === true || m.rangeType === "none" || ((m.planningMode === "optional" || m.scope === "optional" || m.isOptional === true || m.optional === true) && (!Array.isArray(m.ranges) || !m.ranges.length))));
       const range = noRange ? "範囲なし" : (m && r.start!=null && r.end!=null ? rangeText(m,r.start,r.end) : r.start!=null && r.end!=null ? `${r.start}〜${r.end}` : "範囲なし");
       const kind = recordKindForShareV060(r);
       const optional = Boolean(m && (m.planningMode === "optional" || m.scope === "optional" || m.isOptional === true || m.optional === true));
@@ -4860,7 +4846,7 @@ initCloud();
       const materialId=document.getElementById("recMaterial").value;
       const m=mat(materialId);
       if(!m){ alert("教材を選んでください。"); return; }
-      const noRange = (typeof isNoRangeMaterialV057 === "function") ? isNoRangeMaterialV057(m) : (typeof isNoRangeMaterial === "function" ? isNoRangeMaterial(m) : false);
+      const noRange = Boolean(m && (m.rangeMode === "none" || m.noRange === true || m.rangeType === "none" || ((m.planningMode === "optional" || m.scope === "optional" || m.isOptional === true || m.optional === true) && (!Array.isArray(m.ranges) || !m.ranges.length))));
       const record={id:id("rec"),materialId,type:document.getElementById("recType").value,date:document.getElementById("recDate").value||today(),start:null,end:null,minutes:Number(document.getElementById("recMinutes").value),difficulty:Number(document.getElementById("recDiff").value),focus:Number(document.getElementById("recFocus").value),weak:document.getElementById("recWeak").value,memo:document.getElementById("recMemo").value.trim(),private:Boolean(document.getElementById("recPrivate")?.checked),taskId:taskId||null,createdAt:new Date().toISOString()};
       if(record.minutes<=0){ alert("時間を入れてください。"); return; }
       if(!noRange){
@@ -4877,7 +4863,7 @@ initCloud();
         }
       }
       state.records.push(record);
-      if(record.type==="new" && document.getElementById("recAutoReview").checked) makeReviewTasks(record);
+      if(!noRange && record.type==="new" && document.getElementById("recAutoReview").checked) makeReviewTasks(record);
       if(taskId){ const t=state.tasks.find(x=>x.id===taskId); if(t){ t.done=true; t.doneAt=new Date().toISOString(); t.recordId=record.id; } }
       save();
       document.getElementById("recordForm").reset();
@@ -4946,131 +4932,19 @@ initCloud();
 </script>
 
 
-<script>
-/* v0.6.0 patch: no-range optional record validation fix */
-(function(){
-  function isNoRangeMaterialV060RecordFix(m){
-    if(!m) return false;
-    if(m.rangeMode === "none" || m.noRange === true || m.rangeType === "none") return true;
-    const optional = m.planningMode === "optional" || m.scope === "optional" || m.isOptional === true || m.optional === true;
-    const hasRanges = Array.isArray(m.ranges) && m.ranges.length > 0;
-    return optional && !hasRanges;
-  }
-
-  function applyRecordRangeUIV060Fix(){
-    const materialId = document.getElementById("recMaterial")?.value;
-    const m = typeof mat === "function" ? mat(materialId) : null;
-    const noRange = isNoRangeMaterialV060RecordFix(m);
-    const rangeBlock = document.getElementById("recStart")?.closest(".row2");
-    const recStart = document.getElementById("recStart");
-    const recEnd = document.getElementById("recEnd");
-    if(rangeBlock) rangeBlock.classList.toggle("hidden", noRange);
-    if(recStart){ recStart.required = !noRange; if(noRange) recStart.value = ""; }
-    if(recEnd){ recEnd.required = !noRange; if(noRange) recEnd.value = ""; }
-    const auto = document.getElementById("recAutoReview");
-    const autoLabel = auto?.closest("label");
-    if(auto){ auto.disabled = noRange; if(noRange) auto.checked = false; }
-    if(autoLabel) autoLabel.classList.toggle("hidden", noRange);
-  }
-
-  function overrideRecordFormNoRangeFixV060(){
-    const recordForm = document.getElementById("recordForm");
-    if(!recordForm) return;
-    const recMat = document.getElementById("recMaterial");
-    if(recMat) recMat.onchange = applyRecordRangeUIV060Fix;
-    applyRecordRangeUIV060Fix();
-
-    recordForm.onsubmit = e => {
-      e.preventDefault();
-      const taskId = document.getElementById("recordTaskId").value;
-      const materialId = document.getElementById("recMaterial").value;
-      const m = typeof mat === "function" ? mat(materialId) : null;
-      if(!m){ alert("教材を選んでください。"); return; }
-      const noRange = isNoRangeMaterialV060RecordFix(m);
-      const record = {
-        id: id("rec"),
-        materialId,
-        type: document.getElementById("recType").value,
-        date: document.getElementById("recDate").value || today(),
-        start: null,
-        end: null,
-        minutes: Number(document.getElementById("recMinutes").value),
-        difficulty: Number(document.getElementById("recDiff").value),
-        focus: Number(document.getElementById("recFocus").value),
-        weak: document.getElementById("recWeak").value,
-        memo: document.getElementById("recMemo").value.trim(),
-        private: Boolean(document.getElementById("recPrivate")?.checked),
-        taskId: taskId || null,
-        createdAt: new Date().toISOString()
-      };
-      if(record.minutes <= 0){ alert("時間を入れてください。"); return; }
-
-      if(!noRange){
-        const startVal = document.getElementById("recStart").value;
-        const endVal = document.getElementById("recEnd").value;
-        if(startVal === "" || endVal === ""){ alert("範囲開始と範囲終了を入れてください。"); return; }
-        record.start = Number(startVal);
-        record.end = Number(endVal);
-        if(record.start > record.end) [record.start, record.end] = [record.end, record.start];
-        const inTarget = intersectAny({start: record.start, end: record.end}, m.ranges || []);
-        if(!inTarget.length && !confirm("この範囲は教材の対象範囲外です。それでも記録しますか？")) return;
-        if(record.type === "new"){
-          const overlap = intersectAny({start: record.start, end: record.end}, completedRanges(record.materialId));
-          if(overlap.length){
-            const txt = overlap.map(r => rangeText(m, r.start, r.end)).join(", ");
-            if(!confirm(`すでに記録済みの範囲と重なっています：${txt}\nそれでも記録しますか？`)) return;
-          }
-        }
-      }
-
-      state.records.push(record);
-      if(!noRange && record.type === "new" && document.getElementById("recAutoReview").checked) makeReviewTasks(record);
-      if(taskId){
-        const t = state.tasks.find(x => x.id === taskId);
-        if(t){ t.done = true; t.doneAt = new Date().toISOString(); t.recordId = record.id; }
-      }
-      save();
-      document.getElementById("recordForm").reset();
-      document.getElementById("recordTitle").textContent = "学習を記録";
-      document.getElementById("recordTaskId").value = "";
-      document.getElementById("recDate").value = today();
-      document.getElementById("recDiff").value = 3;
-      document.getElementById("recFocus").value = 3;
-      document.getElementById("recWeak").value = "ok";
-      const auto = document.getElementById("recAutoReview"); if(auto) auto.checked = true;
-      const rp = document.getElementById("recPrivate"); if(rp) rp.checked = false;
-      if(typeof resetStopwatch === "function") resetStopwatch();
-      render();
-      toast("記録しました");
-      if(typeof scheduleSharedSnapshotPublishV060 === "function") scheduleSharedSnapshotPublishV060();
-    };
-  }
-
-  const previousRenderV060NoRangeFix = render;
-  render = function(){
-    const result = previousRenderV060NoRangeFix.apply(this, arguments);
-    overrideRecordFormNoRangeFixV060();
-    return result;
-  };
-
-  overrideRecordFormNoRangeFixV060();
-})();
-</script>
-
-
 
 <script>
-/* v0.6.0 debug patch: reserved ranges for unfinished new-study tasks */
+/* v0.6.0 consolidated safety hotfix: auth restore, timer persistence, range reservation */
 (function(){
-  function isOptionalMaterialV060Debug(m){ return Boolean(m && (m.planningMode === "optional" || m.scope === "optional" || m.isOptional === true || m.optional === true)); }
-  function isScheduledMaterialV060Debug(m){ return !isOptionalMaterialV060Debug(m); }
-  function isNoRangeMaterialV060Debug(m){ return Boolean(m && (m.rangeMode === "none" || m.noRange === true || m.rangeType === "none")); }
-  function isNoDeadlineMaterialV060Debug(m){ return Boolean(m && (m.noDeadline || !m.deadline)); }
-  function effectiveDeadlineV060Debug(m, ref){ return isNoDeadlineMaterialV060Debug(m) ? addDays(ref, 29) : m.deadline; }
-  function isStartedMaterialV060Debug(m, ref){ return !(m && m.startDate && m.startDate > ref); }
-  function reservedNewRangesV060Debug(materialId){
+  function isOptionalMaterialHotfix(m){ return Boolean(m && (m.planningMode === "optional" || m.scope === "optional" || m.isOptional === true || m.optional === true)); }
+  function isScheduledMaterialHotfix(m){ return !isOptionalMaterialHotfix(m); }
+  function isNoRangeMaterialHotfix(m){ return Boolean(m && (m.rangeMode === "none" || m.noRange === true || m.rangeType === "none" || (isOptionalMaterialHotfix(m) && (!Array.isArray(m.ranges) || !m.ranges.length)))); }
+  function isNoDeadlineMaterialHotfix(m){ return Boolean(m && (m.noDeadline || !m.deadline)); }
+  function effectiveDeadlineHotfix(m, ref){ return isNoDeadlineMaterialHotfix(m) ? addDays(ref, 29) : m.deadline; }
+  function isStartedMaterialHotfix(m, ref){ return !(m && m.startDate && m.startDate > ref); }
+  function reservedNewRangesHotfix(materialId){
     const m = mat(materialId);
-    if(!m || isNoRangeMaterialV060Debug(m)) return [];
+    if(!m || isNoRangeMaterialHotfix(m)) return [];
     const target = Array.isArray(m.ranges) ? m.ranges : [];
     const parts = [];
     for(const t of (state.tasks || [])){
@@ -5081,10 +4955,10 @@ initCloud();
     }
     return mergeRanges(parts);
   }
-  function availableNewRangesV060Debug(materialId){
+  function availableNewRangesHotfix(materialId){
     const m = mat(materialId);
-    if(!m || isNoRangeMaterialV060Debug(m)) return [];
-    const blocked = mergeRanges([...(completedRanges(materialId) || []), ...reservedNewRangesV060Debug(materialId)]);
+    if(!m || isNoRangeMaterialHotfix(m)) return [];
+    const blocked = mergeRanges([...(completedRanges(materialId) || []), ...reservedNewRangesHotfix(materialId)]);
     return subtractRanges(Array.isArray(m.ranges) ? m.ranges : [], blocked);
   }
   buildTodayPlan = function(force=false){
@@ -5092,29 +4966,27 @@ initCloud();
     if(force){
       state.tasks = state.tasks.filter(t => !(t.createdForDate === date && !t.done && t.generated));
     } else {
-      if(state.tasks.some(t => t.createdForDate === date && t.generated && isScheduledMaterialV060Debug(mat(t.materialId)))) return;
+      if(state.tasks.some(t => t.createdForDate === date && t.generated && isScheduledMaterialHotfix(mat(t.materialId)))) return;
     }
     const mode = modeForToday();
     if(mode === "rest"){ save(); return; }
-    const dueUndone = (state.tasks || []).filter(t => !t.done && t.dueDate <= date && isScheduledMaterialV060Debug(mat(t.materialId)));
-    const existingMinutes = dueUndone.reduce((s,t)=>s+taskEstimate(t),0);
+    const dueUndone = (state.tasks || []).filter(t => !t.done && t.dueDate <= date && isScheduledMaterialHotfix(mat(t.materialId)));
+    const existingMinutes = dueUndone.reduce((sum,t)=>sum+taskEstimate(t),0);
     let cap = Math.max(0, todayCapacity() - existingMinutes);
     const materials = (state.materials || [])
-      .filter(m => isScheduledMaterialV060Debug(m) && !isNoRangeMaterialV060Debug(m) && isStartedMaterialV060Debug(m, date))
+      .filter(m => isScheduledMaterialHotfix(m) && !isNoRangeMaterialHotfix(m) && isStartedMaterialHotfix(m, date))
       .map(m => ({ m, e:estimate(m) }))
       .filter(x => x.e.remaining > 0)
       .sort((a,b)=>{
-        const ad = isNoDeadlineMaterialV060Debug(a.m), bd = isNoDeadlineMaterialV060Debug(b.m);
+        const ad = isNoDeadlineMaterialHotfix(a.m), bd = isNoDeadlineMaterialHotfix(b.m);
         if(ad !== bd) return ad ? 1 : -1;
-        const da = daysInc(date, effectiveDeadlineV060Debug(a.m, date));
-        const db = daysInc(date, effectiveDeadlineV060Debug(b.m, date));
-        const urgent = da - db;
+        const urgent = daysInc(date, effectiveDeadlineHotfix(a.m, date)) - daysInc(date, effectiveDeadlineHotfix(b.m, date));
         if(urgent !== 0) return urgent;
         return (priorityMul[b.m.priority] || 1) - (priorityMul[a.m.priority] || 1);
       });
     for(const {m,e} of materials){
       if(cap <= 0) break;
-      const remain = availableNewRangesV060Debug(m.id);
+      const remain = availableNewRangesHotfix(m.id);
       if(!remain.length) continue;
       const planDays = Math.max(1, e.planDays || e.days || 1);
       const requiredUnits = Math.max(1, Math.ceil((e.remaining / planDays) * (priorityMul[m.priority] || 1)));
@@ -5129,7 +5001,92 @@ initCloud();
     }
     save();
   };
+
+  function currentTimerMsHotfix(){ return Math.max(0, Math.round((stopwatchElapsedMs || 0) + (stopwatchStartedAt ? Date.now() - stopwatchStartedAt : 0))); }
+  timerDraftPayload = function(){
+    const running = Boolean(stopwatchStartedAt);
+    return { elapsedMs:currentTimerMsHotfix(), startedAt:running ? Date.now() : null, running, updatedAt:new Date().toISOString(), patch:"v060-auth-timer-persist" };
+  };
+  const oldRestoreStopwatchDraft = restoreStopwatchDraft;
+  restoreStopwatchDraft = function(){
+    try{
+      const raw = localStorage.getItem(TIMER_KEY);
+      if(!raw){ oldRestoreStopwatchDraft(); return; }
+      const saved = JSON.parse(raw);
+      stopwatchElapsedMs = Math.max(0, Number(saved.elapsedMs) || 0);
+      const startedAt = Number(saved.startedAt) || 0;
+      stopwatchStartedAt = saved.running && startedAt ? startedAt : null;
+      if(stopwatchStartedAt){ clearInterval(stopwatchTimer); stopwatchTimer = setInterval(renderStopwatch, 500); }
+      renderStopwatch();
+    }catch(e){ console.warn("タイマー下書きの復元に失敗しました", e); oldRestoreStopwatchDraft(); }
+  };
+  const oldStartStopwatch = startStopwatch;
+  startStopwatch = function(){ oldStartStopwatch(); try{ saveStopwatchDraft(); }catch(e){} };
+  const oldPauseStopwatch = pauseStopwatch;
+  pauseStopwatch = function(){ oldPauseStopwatch(); try{ saveStopwatchDraft(); }catch(e){} };
+
+  async function recoverAuthSessionHotfix(){
+    try{
+      if(!supabaseClient && typeof initCloud === "function") await initCloud();
+      if(!supabaseClient || !supabaseClient.auth) return false;
+      const { data, error } = await supabaseClient.auth.getSession();
+      if(error) throw error;
+      const user = data && data.session && data.session.user ? data.session.user : null;
+      if(user){
+        currentUser = user;
+        try{ localStorage.setItem(KEY + "-auth-restore-status", "restored @ " + new Date().toISOString()); }catch(e){}
+        if(typeof updateAuthUI === "function") updateAuthUI();
+        if(typeof autoLoadOrCreateCloudData === "function" && !lastCloudLoadedAt){ try{ await autoLoadOrCreateCloudData(); }catch(e){} }
+        return true;
+      }
+      try{ localStorage.setItem(KEY + "-auth-restore-status", "no_session @ " + new Date().toISOString()); }catch(e){}
+      return false;
+    }catch(e){
+      try{ localStorage.setItem(KEY + "-auth-restore-status", "error:" + (e.message || e) + " @ " + new Date().toISOString()); }catch(_e){}
+      return false;
+    }
+  }
+  const oldUpdateAuthUIHotfix = updateAuthUI;
+  updateAuthUI = function(message, kind=""){
+    const result = oldUpdateAuthUIHotfix.apply(this, arguments);
+    const loggedIn = Boolean(currentUser);
+    const signIn = document.getElementById("signInBtn");
+    const emailInput = document.getElementById("loginEmail");
+    const passwordInput = document.getElementById("loginPassword");
+    if(signIn){ signIn.disabled = loggedIn; signIn.textContent = loggedIn ? "ログイン済み" : "ログイン"; }
+    if(emailInput) emailInput.disabled = loggedIn;
+    if(passwordInput) passwordInput.disabled = loggedIn;
+    return result;
+  };
+  const oldSignInWithPasswordHotfix = signInWithPassword;
+  signInWithPassword = async function(){
+    if(currentUser){ updateAuthUI("すでにログイン中です。別アカウントに切り替える場合は先にログアウトしてください。", "good"); return; }
+    return oldSignInWithPasswordHotfix.apply(this, arguments);
+  };
+  function rebindTimerButtonsHotfix(){
+    const ids = {timerStart:startStopwatch, timerPause:pauseStopwatch, timerReset:resetStopwatch, timerApply:applyStopwatchToMinutes};
+    for(const [id, fn] of Object.entries(ids)){ const el=document.getElementById(id); if(el) el.onclick=fn; }
+  }
+  window.addEventListener("pagehide", ()=>{ try{ saveStopwatchDraft(); }catch(e){} });
+  window.addEventListener("beforeunload", ()=>{ try{ saveStopwatchDraft(); }catch(e){} });
+  document.addEventListener("visibilitychange", ()=>{ if(document.hidden){ try{ saveStopwatchDraft(); }catch(e){} } });
+  setInterval(()=>{ if(stopwatchStartedAt){ try{ saveStopwatchDraft(); }catch(e){} } }, 15000);
+  setInterval(()=>recoverAuthSessionHotfix(), 60000);
+  try{
+    const probe = KEY + "-storage-persistence-probe";
+    const prev = localStorage.getItem(probe);
+    localStorage.setItem(probe, "ok-" + Date.now());
+    localStorage.setItem(KEY + "-storage-health", JSON.stringify({ok:localStorage.getItem(probe)?.startsWith("ok-"), hadPrevious:Boolean(prev), checkedAt:new Date().toISOString()}));
+  }catch(e){}
+  rebindTimerButtonsHotfix();
+  try{ restoreStopwatchDraft(); }catch(e){}
+  renderStopwatch();
+  recoverAuthSessionHotfix();
+  setTimeout(()=>recoverAuthSessionHotfix(), 1200);
+  setTimeout(()=>recoverAuthSessionHotfix(), 3500);
+  try{ render(); }catch(e){}
 })();
 </script>
+
 </body>
 </html>
