@@ -2566,7 +2566,7 @@ initCloud();
       });
     for(const {m,e} of materials){
       if(cap<=0) break;
-      const remain = remainingRanges(m.id);
+      const remain = availableNewRangesNewCleanup(m.id);
       if(!remain.length) continue;
       const requiredUnits = Math.max(1, Math.ceil((e.remaining / Math.max(1,e.planDays)) * (priorityMul[m.priority]||1)));
       const capUnits = Math.max(1, Math.floor(cap / Math.max(1,e.predicted)));
@@ -3221,7 +3221,7 @@ initCloud();
       });
     for(const {m,e} of materials){
       if(cap<=0) break;
-      const remain = remainingRanges(m.id);
+      const remain = availableNewRangesNewCleanup(m.id);
       if(!remain.length) continue;
       const requiredUnits = Math.max(1, Math.ceil((e.remaining / Math.max(1,e.planDays)) * (priorityMul[m.priority]||1)));
       const capUnits = Math.max(1, Math.floor(cap / Math.max(1,e.predicted)));
@@ -5084,6 +5084,355 @@ initCloud();
   recoverAuthSessionHotfix();
   setTimeout(()=>recoverAuthSessionHotfix(), 1200);
   setTimeout(()=>recoverAuthSessionHotfix(), 3500);
+  try{ render(); }catch(e){}
+})();
+</script>
+
+
+<script>
+/* v0.6.0 hotfix: new-task carryover max-2 cleanup */
+(function(){
+  function isOptionalMaterialNewCleanup(m){
+    return Boolean(m && (m.planningMode === "optional" || m.scope === "optional" || m.isOptional === true || m.optional === true));
+  }
+  function isScheduledMaterialNewCleanup(m){ return !isOptionalMaterialNewCleanup(m); }
+  function isNoRangeMaterialNewCleanup(m){
+    return Boolean(m && (m.rangeMode === "none" || m.noRange === true || m.rangeType === "none" || (isOptionalMaterialNewCleanup(m) && (!Array.isArray(m.ranges) || !m.ranges.length))));
+  }
+  function isNoDeadlineMaterialNewCleanup(m){ return Boolean(m && (m.noDeadline || !m.deadline)); }
+  function effectiveDeadlineNewCleanup(m, ref){ return isNoDeadlineMaterialNewCleanup(m) ? addDays(ref, 29) : m.deadline; }
+  function isStartedMaterialNewCleanup(m, ref){ return !(m && m.startDate && m.startDate > ref); }
+  function pendingNewTasksForMaterialNewCleanup(materialId){
+    return (state.tasks || []).filter(t => !t.done && t.type === "new" && t.materialId === materialId && t.start != null && t.end != null);
+  }
+  function compareTaskRangeNewCleanup(a,b){
+    const as = Number(a.start), bs = Number(b.start);
+    if(as !== bs) return as - bs;
+    const ae = Number(a.end), be = Number(b.end);
+    if(ae !== be) return ae - be;
+    const ad = String(a.dueDate || ""), bd = String(b.dueDate || "");
+    if(ad !== bd) return ad < bd ? -1 : 1;
+    const ac = String(a.createdAt || ""), bc = String(b.createdAt || "");
+    if(ac !== bc) return ac < bc ? -1 : 1;
+    return String(a.id || "").localeCompare(String(b.id || ""));
+  }
+  const MAX_PENDING_NEW_TASKS_PER_MATERIAL_V060 = 2;
+  function cleanupExtraPendingNewTasksNewCleanup(){
+    const materials = state.materials || [];
+    const removeIds = new Set();
+    for(const m of materials){
+      if(!m || !isScheduledMaterialNewCleanup(m) || isNoRangeMaterialNewCleanup(m)) continue;
+      const pending = pendingNewTasksForMaterialNewCleanup(m.id).sort(compareTaskRangeNewCleanup);
+      if(pending.length <= MAX_PENDING_NEW_TASKS_PER_MATERIAL_V060) continue;
+      const keepIds = new Set(pending.slice(0, MAX_PENDING_NEW_TASKS_PER_MATERIAL_V060).map(t => t.id));
+      for(const t of pending){
+        if(keepIds.has(t.id)) continue;
+        if(t.generated !== false) removeIds.add(t.id);
+      }
+    }
+    if(removeIds.size){
+      state.tasks = (state.tasks || []).filter(t => !removeIds.has(t.id));
+    }
+    return removeIds.size;
+  }
+  function reservedNewRangesNewCleanup(materialId){
+    const m = mat(materialId);
+    if(!m || isNoRangeMaterialNewCleanup(m)) return [];
+    const target = Array.isArray(m.ranges) ? m.ranges : [];
+    const parts = [];
+    for(const t of pendingNewTasksForMaterialNewCleanup(materialId)){
+      if(t.start == null || t.end == null) continue;
+      const rg = { start:Number(t.start), end:Number(t.end) };
+      for(const targetRange of target){ const x = intersect(rg, targetRange); if(x) parts.push(x); }
+    }
+    return mergeRanges(parts);
+  }
+  function availableNewRangesNewCleanup(materialId){
+    const m = mat(materialId);
+    if(!m || isNoRangeMaterialNewCleanup(m)) return [];
+    const blocked = mergeRanges([...(completedRanges(materialId) || []), ...reservedNewRangesNewCleanup(materialId)]);
+    return subtractRanges(Array.isArray(m.ranges) ? m.ranges : [], blocked);
+  }
+
+  buildTodayPlan = function(force=false){
+    const date = today();
+    if(force){
+      state.tasks = (state.tasks || []).filter(t => !(t.createdForDate === date && !t.done && t.generated));
+    } else {
+      if((state.tasks || []).some(t => t.createdForDate === date && t.generated && isScheduledMaterialNewCleanup(mat(t.materialId)))) return;
+    }
+
+    cleanupExtraPendingNewTasksNewCleanup();
+
+    const mode = modeForToday();
+    if(mode === "rest"){ save(); return; }
+
+    const dueUndone = (state.tasks || []).filter(t => !t.done && t.dueDate <= date && isScheduledMaterialNewCleanup(mat(t.materialId)));
+    const existingMinutes = dueUndone.reduce((sum,t)=>sum+taskEstimate(t),0);
+    let cap = Math.max(0, todayCapacity() - existingMinutes);
+
+    const materials = (state.materials || [])
+      .filter(m => isScheduledMaterialNewCleanup(m) && !isNoRangeMaterialNewCleanup(m) && isStartedMaterialNewCleanup(m, date))
+      .filter(m => pendingNewTasksForMaterialNewCleanup(m.id).length < MAX_PENDING_NEW_TASKS_PER_MATERIAL_V060)
+      .map(m => ({ m, e:estimate(m) }))
+      .filter(x => x.e.remaining > 0)
+      .sort((a,b)=>{
+        const ad = isNoDeadlineMaterialNewCleanup(a.m), bd = isNoDeadlineMaterialNewCleanup(b.m);
+        if(ad !== bd) return ad ? 1 : -1;
+        const urgent = daysInc(date, effectiveDeadlineNewCleanup(a.m, date)) - daysInc(date, effectiveDeadlineNewCleanup(b.m, date));
+        if(urgent !== 0) return urgent;
+        return (priorityMul[b.m.priority] || 1) - (priorityMul[a.m.priority] || 1);
+      });
+
+    for(const {m,e} of materials){
+      if(cap <= 0) break;
+      const remain = availableNewRangesNewCleanup(m.id);
+      if(!remain.length) continue;
+      const planDays = Math.max(1, e.planDays || e.days || 1);
+      const requiredUnits = Math.max(1, Math.ceil((e.remaining / planDays) * (priorityMul[m.priority] || 1)));
+      const capUnits = Math.max(1, Math.floor(cap / Math.max(1, e.predicted)));
+      const units = Math.min(requiredUnits, capUnits, len(remain[0]));
+      if(units <= 0) continue;
+      const start = remain[0].start;
+      const end = start + units - 1;
+      const minutes = Math.ceil(units * e.predicted);
+      state.tasks.push({ id:id("task"), type:"new", materialId:m.id, start, end, dueDate:date, createdForDate:date, generated:true, weak:"ok", plannedMinutes:minutes, done:false, createdAt:new Date().toISOString() });
+      cap -= minutes;
+    }
+    save();
+  };
+
+  const oldRenderTodayNewCleanup = renderToday;
+  renderToday = function(){
+    cleanupExtraPendingNewTasksNewCleanup();
+    return oldRenderTodayNewCleanup.apply(this, arguments);
+  };
+
+  const oldRenderNewCleanup = render;
+  render = function(){
+    cleanupExtraPendingNewTasksNewCleanup();
+    return oldRenderNewCleanup.apply(this, arguments);
+  };
+})();
+</script>
+
+
+<script>
+/* v0.6.0 hotfix: review-chain scheduling and overdue review dedupe */
+(function(){
+  const REVIEW_CHAIN_PATCH = "v060-review-chain-actual-date";
+  function isOptionalMaterialReviewChain(m){
+    return Boolean(m && (m.planningMode === "optional" || m.scope === "optional" || m.isOptional === true || m.optional === true));
+  }
+  function isNoRangeMaterialReviewChain(m){
+    return Boolean(m && (m.rangeMode === "none" || m.noRange === true || m.rangeType === "none" || (isOptionalMaterialReviewChain(m) && (!Array.isArray(m.ranges) || !m.ranges.length))));
+  }
+  function isNoDeadlineMaterialReviewChain(m){ return Boolean(m && (m.noDeadline || !m.deadline)); }
+  function canHaveReviewChain(m){ return Boolean(m && !isOptionalMaterialReviewChain(m) && !isNoRangeMaterialReviewChain(m)); }
+  function num(v){ const n = Number(v); return Number.isFinite(n) ? n : null; }
+  function normRangeFromObj(o){
+    const s = num(o && o.start), e = num(o && o.end);
+    if(s == null || e == null) return null;
+    return { start:Math.min(s,e), end:Math.max(s,e) };
+  }
+  function rangesOverlapReviewChain(a,b){ return Boolean(a && b && a.start <= b.end && b.start <= a.end); }
+  function rangesSameReviewChain(a,b){ return Boolean(a && b && a.start === b.start && a.end === b.end); }
+  function worstWeakReviewChain(values){
+    const score = {ok:0, uncertain:1, weak:2, redo:3};
+    let best = "ok", bestScore = -1;
+    for(const v of values){ const s = score[v || "ok"] ?? 0; if(s > bestScore){ bestScore = s; best = v || "ok"; } }
+    return best;
+  }
+  function taskSortReviewChain(a,b){
+    const ar = normRangeFromObj(a), br = normRangeFromObj(b);
+    if(ar && br){ if(ar.start !== br.start) return ar.start - br.start; if(ar.end !== br.end) return br.end - ar.end; }
+    const ad = String(a.dueDate || ""), bd = String(b.dueDate || "");
+    if(ad !== bd) return ad < bd ? -1 : 1;
+    const ac = String(a.createdAt || ""), bc = String(b.createdAt || "");
+    if(ac !== bc) return ac < bc ? -1 : 1;
+    return String(a.id || "").localeCompare(String(b.id || ""));
+  }
+  function pendingReviewTasksForMaterial(materialId){
+    return (state.tasks || []).filter(t => !t.done && t.type === "review" && t.materialId === materialId && normRangeFromObj(t));
+  }
+  function collapsePendingReviewsForMaterial(materialId){
+    const tasks = pendingReviewTasksForMaterial(materialId).sort(taskSortReviewChain);
+    if(tasks.length < 2) return 0;
+    const clusters = [];
+    for(const t of tasks){
+      const r = normRangeFromObj(t);
+      let cluster = clusters.find(c => rangesOverlapReviewChain(c.range, r));
+      if(!cluster){ clusters.push({ range:{...r}, tasks:[t] }); continue; }
+      cluster.range.start = Math.min(cluster.range.start, r.start);
+      cluster.range.end = Math.max(cluster.range.end, r.end);
+      cluster.tasks.push(t);
+    }
+    const removeIds = new Set();
+    for(const c of clusters){
+      if(c.tasks.length < 2) continue;
+      c.tasks.sort((a,b)=>{
+        const ad = String(a.dueDate || ""), bd = String(b.dueDate || "");
+        if(ad !== bd) return ad < bd ? -1 : 1;
+        const al = len(normRangeFromObj(a)), bl = len(normRangeFromObj(b));
+        if(al !== bl) return bl - al;
+        return taskSortReviewChain(a,b);
+      });
+      const keep = c.tasks[0];
+      keep.start = c.range.start;
+      keep.end = c.range.end;
+      keep.dueDate = c.tasks.map(t=>String(t.dueDate || "")).filter(Boolean).sort()[0] || keep.dueDate;
+      keep.createdForDate = keep.dueDate;
+      keep.plannedMinutes = null;
+      keep.weak = worstWeakReviewChain(c.tasks.map(t=>t.weak));
+      keep.reviewChainPatch = REVIEW_CHAIN_PATCH;
+      for(const t of c.tasks){ if(t.id !== keep.id) removeIds.add(t.id); }
+    }
+    if(removeIds.size){ state.tasks = (state.tasks || []).filter(t => !removeIds.has(t.id)); }
+    return removeIds.size;
+  }
+  function cleanupPendingReviewChains(){
+    let removed = 0;
+    for(const m of (state.materials || [])){
+      if(!canHaveReviewChain(m)) continue;
+      removed += collapsePendingReviewsForMaterial(m.id);
+    }
+    return removed;
+  }
+  function completedReviewCountForRange(record){
+    const rr = normRangeFromObj(record);
+    if(!rr) return 0;
+    return (state.records || []).filter(r => r.type === "review" && r.materialId === record.materialId && rangesSameReviewChain(normRangeFromObj(r), rr)).length;
+  }
+  function nextReviewIndexForRecord(record, task){
+    if(record.type === "new") return 0;
+    if(record.type !== "review") return null;
+    const taskStep = task && Number.isFinite(Number(task.reviewStep)) ? Number(task.reviewStep) : null;
+    if(taskStep != null) return taskStep + 1;
+    return completedReviewCountForRange(record);
+  }
+  function upsertNextReviewTask(record, completedTask){
+    const m = mat(record.materialId);
+    if(!canHaveReviewChain(m)) return;
+    const rr = normRangeFromObj(record);
+    if(!rr) return;
+    const nextIndex = nextReviewIndexForRecord(record, completedTask);
+    if(nextIndex == null || nextIndex < 0 || nextIndex >= REVIEW_OFFSETS.length) return;
+    const due = addDays(record.date || today(), REVIEW_OFFSETS[nextIndex]);
+    if(!isNoDeadlineMaterialReviewChain(m) && due > m.deadline) return;
+    const overlapping = pendingReviewTasksForMaterial(record.materialId).filter(t => rangesOverlapReviewChain(normRangeFromObj(t), rr));
+    if(overlapping.length){
+      overlapping.sort(taskSortReviewChain);
+      const keep = overlapping[0];
+      keep.start = rr.start;
+      keep.end = rr.end;
+      keep.dueDate = due;
+      keep.createdForDate = due;
+      keep.sourceRecordId = record.id;
+      keep.weak = record.weak || keep.weak || "ok";
+      keep.plannedMinutes = null;
+      keep.reviewStep = nextIndex;
+      keep.reviewChainPatch = REVIEW_CHAIN_PATCH;
+      const removeIds = new Set(overlapping.slice(1).map(t=>t.id));
+      if(removeIds.size) state.tasks = (state.tasks || []).filter(t => !removeIds.has(t.id));
+      return;
+    }
+    state.tasks.push({
+      id:id("task"), type:"review", materialId:record.materialId,
+      start:rr.start, end:rr.end, dueDate:due, createdForDate:due,
+      sourceRecordId:record.id, weak:record.weak || "ok", plannedMinutes:null,
+      done:false, reviewStep:nextIndex, reviewChainPatch:REVIEW_CHAIN_PATCH,
+      createdAt:new Date().toISOString()
+    });
+  }
+
+  makeReviewTasks = function(record){
+    upsertNextReviewTask(record, record && record.taskId ? (state.tasks || []).find(t=>t.id===record.taskId) : null);
+    cleanupPendingReviewChains();
+  };
+
+  quickDone = function(taskId){
+    const t=(state.tasks || []).find(x=>x.id===taskId); if(!t) return;
+    const m=mat(t.materialId); if(!m) return;
+    const record={
+      id:id("rec"), materialId:t.materialId, type:t.type, date:today(),
+      start:t.start, end:t.end, minutes:taskEstimate(t),
+      difficulty:Number(m.defaultDifficulty||3), focus:3, weak:t.weak||"ok",
+      memo:"タスクからそのまま完了", taskId:t.id, createdAt:new Date().toISOString()
+    };
+    if(t.type==="new"){
+      const overlap = intersectAny({start:record.start,end:record.end}, completedRanges(record.materialId));
+      if(overlap.length && !confirm("この範囲はすでに一部記録済みです。それでも完了にしますか？")) return;
+    }
+    state.records.push(record);
+    t.done=true; t.doneAt=new Date().toISOString(); t.recordId=record.id;
+    if((record.type === "new" || record.type === "review") && canHaveReviewChain(m)) upsertNextReviewTask(record, t);
+    cleanupPendingReviewChains();
+    save(); render(); toast("完了にしました");
+    if(typeof scheduleSharedSnapshotPublishV060 === "function") scheduleSharedSnapshotPublishV060();
+  };
+
+  function bindReviewChainRecordForm(){
+    const recordForm=document.getElementById("recordForm");
+    if(!recordForm) return;
+    recordForm.onsubmit=e=>{
+      e.preventDefault();
+      const taskId=document.getElementById("recordTaskId").value;
+      const materialId=document.getElementById("recMaterial").value;
+      const m=mat(materialId);
+      if(!m){ alert("教材を選んでください。"); return; }
+      const noRange = isNoRangeMaterialReviewChain(m);
+      const record={id:id("rec"),materialId,type:document.getElementById("recType").value,date:document.getElementById("recDate").value||today(),start:null,end:null,minutes:Number(document.getElementById("recMinutes").value),difficulty:Number(document.getElementById("recDiff").value),focus:Number(document.getElementById("recFocus").value),weak:document.getElementById("recWeak").value,memo:document.getElementById("recMemo").value.trim(),private:Boolean(document.getElementById("recPrivate")?.checked),taskId:taskId||null,createdAt:new Date().toISOString()};
+      if(record.minutes<=0){ alert("時間を入れてください。"); return; }
+      if(!noRange){
+        const startVal=document.getElementById("recStart").value;
+        const endVal=document.getElementById("recEnd").value;
+        if(startVal==="" || endVal===""){ alert("範囲開始と範囲終了を入れてください。"); return; }
+        record.start=Number(startVal); record.end=Number(endVal);
+        if(record.start>record.end) [record.start,record.end]=[record.end,record.start];
+        const inTarget = intersectAny({start:record.start,end:record.end}, m.ranges||[]);
+        if(!inTarget.length && !confirm("この範囲は教材の対象範囲外です。それでも記録しますか？")) return;
+        if(record.type==="new"){
+          const overlap = intersectAny({start:record.start,end:record.end}, completedRanges(record.materialId));
+          if(overlap.length){ const txt=overlap.map(r=>rangeText(m,r.start,r.end)).join(", "); if(!confirm(`すでに記録済みの範囲と重なっています：${txt}\nそれでも記録しますか？`)) return; }
+        }
+      }
+      const task = taskId ? (state.tasks || []).find(x=>x.id===taskId) : null;
+      state.records.push(record);
+      if(task){ task.done=true; task.doneAt=new Date().toISOString(); task.recordId=record.id; }
+      if(!noRange && (record.type === "new" || record.type === "review") && document.getElementById("recAutoReview").checked) upsertNextReviewTask(record, task);
+      cleanupPendingReviewChains();
+      save();
+      document.getElementById("recordForm").reset();
+      document.getElementById("recordTitle").textContent="学習を記録";
+      document.getElementById("recordTaskId").value="";
+      document.getElementById("recDate").value=today();
+      document.getElementById("recDiff").value=3;
+      document.getElementById("recFocus").value=3;
+      document.getElementById("recWeak").value="ok";
+      document.getElementById("recAutoReview").checked=true;
+      const rp=document.getElementById("recPrivate"); if(rp) rp.checked=false;
+      resetStopwatch();
+      render(); toast("記録しました");
+      if(typeof scheduleSharedSnapshotPublishV060 === "function") scheduleSharedSnapshotPublishV060();
+    };
+  }
+
+  const oldRenderReviewChain = render;
+  render = function(){
+    const removed = cleanupPendingReviewChains();
+    const result = oldRenderReviewChain.apply(this, arguments);
+    bindReviewChainRecordForm();
+    if(removed){ try{ save(); }catch(e){} }
+    return result;
+  };
+  const oldBuildTodayPlanReviewChain = buildTodayPlan;
+  buildTodayPlan = function(force=false){
+    const result = oldBuildTodayPlanReviewChain.apply(this, arguments);
+    cleanupPendingReviewChains();
+    return result;
+  };
+  cleanupPendingReviewChains();
+  bindReviewChainRecordForm();
   try{ render(); }catch(e){}
 })();
 </script>
