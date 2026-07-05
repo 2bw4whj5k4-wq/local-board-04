@@ -4301,7 +4301,9 @@ initCloud();
   }
 
   function recordKindForShareV060(r){
-    if(typeof recordKindLabelV057 === "function") return recordKindLabelV057(r);
+    const m = mat(r.materialId);
+    const optional = Boolean(m && (m.planningMode === "optional" || m.scope === "optional" || m.isOptional === true || m.optional === true));
+    if(optional) return "プラスα";
     return r.type === "review" ? "復習" : "新規";
   }
 
@@ -4684,12 +4686,15 @@ initCloud();
             <div class="item"><div class="title">閲覧専用共有の土台を追加</div><div class="small">共有ONのユーザーが作った共有用スナップショットだけを、追加した相手が見られるようにしました。</div></div>
             <div class="item"><div class="title">メイン保存データは直接共有しない</div><div class="small">study_planner_dataは本人用のまま維持し、相手には教材名・日付・記録時間・合計時間だけを渡します。</div></div>
             <div class="item"><div class="title">記録ごとの非公開に対応</div><div class="small">記録時に「この記録は共有しない」を選べます。既存記録は初期状態では共有対象です。</div></div>
+            <div class="item"><div class="title">復習タスクの作り方を調整</div><div class="small">新規学習時に先の復習をまとめて作らず、次の1回分だけ作るようにしました。復習を完了したら、実際に復習した日を基準に次の復習を作ります。</div></div>
+            <div class="item"><div class="title">今日のタスクの重複を整理</div><div class="small">同じ教材・重なる範囲の未完了復習が複数ある場合は、今日の表示前に1件へまとめます。新規学習タスクも同じ教材では最大2件までに抑えます。</div></div>
+            <div class="item"><div class="title">プラスα記録と共有表示を調整</div><div class="small">範囲なしのプラスα教材では範囲入力を求めず、最近の記録や共有タブでもプラスαとして分かるようにしました。</div></div>
           </div>
         </div>`);
     }
     if(updates){
       const topNotice = updates.querySelector(".notice.good");
-      if(topNotice) topNotice.innerHTML = "v0.6.0では、メイン保存データを直接読ませず、共有用に加工したスナップショットだけを相手が閲覧できる共有機能を追加しました。本番反映前に必ずバックアップを書き出してください。";
+      if(topNotice) topNotice.innerHTML = "v0.6.0では、共有機能に加えて、復習タスクの作り方と今日のタスク表示を調整しました。保存JSON本体と既存のstudy_planner_dataは維持しています。本番反映前に必ずバックアップを書き出してください。";
       const dataMemo = [...updates.querySelectorAll(".card")].find(c=>c.querySelector("h2")?.textContent.trim()==="データ保護メモ");
       const memoNotice = dataMemo?.querySelector(".notice");
       if(memoNotice) memoNotice.innerHTML = "共有機能ではSupabaseに新しい3テーブルを追加します。既存のstudy_planner_dataと保存JSON本体は維持しますが、記録には非公開フラグが追加される場合があります。";
@@ -5434,6 +5439,457 @@ initCloud();
   cleanupPendingReviewChains();
   bindReviewChainRecordForm();
   try{ render(); }catch(e){}
+})();
+</script>
+
+<script>
+/* v0.6.0 test patch: review task generation and new-task reservation */
+(function(){
+  const REVIEW_OFFSETS_PATCH_V060 = (typeof REVIEW_OFFSETS !== "undefined" && Array.isArray(REVIEW_OFFSETS)) ? REVIEW_OFFSETS : [1,3,7,14];
+  const MAX_PENDING_NEW_PER_MATERIAL_PATCH_V060 = 2;
+  const REVIEW_PATCH_MARK_V060 = "v060-review-task-generation";
+
+  function isOptionalMaterialPatchV060(m){
+    return Boolean(m && (m.planningMode === "optional" || m.scope === "optional" || m.isOptional === true || m.optional === true));
+  }
+  function isNoRangeMaterialPatchV060(m){
+    return Boolean(m && (m.rangeMode === "none" || m.noRange === true || m.rangeType === "none" || (isOptionalMaterialPatchV060(m) && (!Array.isArray(m.ranges) || !m.ranges.length))));
+  }
+  function isNoDeadlineMaterialPatchV060(m){ return Boolean(m && (m.noDeadline || !m.deadline)); }
+  function isScheduledMaterialPatchV060(m){ return Boolean(m && !isOptionalMaterialPatchV060(m)); }
+  function canPlanRangedMaterialPatchV060(m){ return isScheduledMaterialPatchV060(m) && !isNoRangeMaterialPatchV060(m); }
+  function isStartedMaterialPatchV060(m, ref){ return !(m && m.startDate && m.startDate > ref); }
+  function effectiveDeadlinePatchV060(m, ref){ return isNoDeadlineMaterialPatchV060(m) ? addDays(ref, 29) : m.deadline; }
+  function numPatchV060(value){
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  }
+  function rangeFromPatchV060(obj){
+    const s = numPatchV060(obj && obj.start);
+    const e = numPatchV060(obj && obj.end);
+    if(s == null || e == null) return null;
+    return {start:Math.min(s,e), end:Math.max(s,e)};
+  }
+  function rangeLenPatchV060(range){ return range ? Math.max(0, range.end - range.start + 1) : 0; }
+  function rangesOverlapPatchV060(a,b){ return Boolean(a && b && a.start <= b.end && b.start <= a.end); }
+  function rangesSamePatchV060(a,b){ return Boolean(a && b && a.start === b.start && a.end === b.end); }
+  function dateDiffPatchV060(a,b){
+    if(!a || !b) return null;
+    return Math.round((dateObj(b) - dateObj(a)) / 86400000);
+  }
+  function taskSortPatchV060(a,b){
+    const ar = rangeFromPatchV060(a), br = rangeFromPatchV060(b);
+    if(ar && br){
+      if(ar.start !== br.start) return ar.start - br.start;
+      if(ar.end !== br.end) return ar.end - br.end;
+    }
+    const ad = String(a.dueDate || ""), bd = String(b.dueDate || "");
+    if(ad !== bd) return ad < bd ? -1 : 1;
+    const ac = String(a.createdAt || ""), bc = String(b.createdAt || "");
+    if(ac !== bc) return ac < bc ? -1 : 1;
+    return String(a.id || "").localeCompare(String(b.id || ""));
+  }
+  function weakWorstPatchV060(values){
+    const score = {ok:0, uncertain:1, weak:2, redo:3};
+    let label = "ok", best = -1;
+    for(const value of values){
+      const key = value || "ok";
+      const s = score[key] ?? 0;
+      if(s > best){ best = s; label = key; }
+    }
+    return label;
+  }
+  function inferReviewStepFromTaskPatchV060(task){
+    if(!task) return null;
+    const direct = Number(task.reviewStep);
+    if(Number.isFinite(direct)) return Math.max(0, Math.min(REVIEW_OFFSETS_PATCH_V060.length - 1, Math.floor(direct)));
+    const source = (state.records || []).find(r => r.id === task.sourceRecordId);
+    const diff = source ? dateDiffPatchV060(source.date, task.dueDate || task.createdForDate) : null;
+    const idx = REVIEW_OFFSETS_PATCH_V060.indexOf(diff);
+    return idx >= 0 ? idx : null;
+  }
+  function pendingReviewTasksForMaterialPatchV060(materialId){
+    return (state.tasks || []).filter(t => !t.done && t.type === "review" && t.materialId === materialId && rangeFromPatchV060(t));
+  }
+  function collapsePendingReviewsForMaterialPatchV060(materialId){
+    const tasks = pendingReviewTasksForMaterialPatchV060(materialId).sort(taskSortPatchV060);
+    if(tasks.length < 2) return 0;
+    const clusters = [];
+    for(const task of tasks){
+      const range = rangeFromPatchV060(task);
+      let cluster = clusters.find(c => rangesOverlapPatchV060(c.range, range));
+      if(!cluster){
+        clusters.push({range:{...range}, tasks:[task]});
+        continue;
+      }
+      cluster.range.start = Math.min(cluster.range.start, range.start);
+      cluster.range.end = Math.max(cluster.range.end, range.end);
+      cluster.tasks.push(task);
+    }
+    const removeIds = new Set();
+    for(const cluster of clusters){
+      if(cluster.tasks.length < 2) continue;
+      cluster.tasks.sort((a,b)=>{
+        const ad = String(a.dueDate || ""), bd = String(b.dueDate || "");
+        if(ad !== bd) return ad < bd ? -1 : 1;
+        const as = inferReviewStepFromTaskPatchV060(a);
+        const bs = inferReviewStepFromTaskPatchV060(b);
+        if(as != null && bs != null && as !== bs) return as - bs;
+        if(as != null && bs == null) return -1;
+        if(as == null && bs != null) return 1;
+        return taskSortPatchV060(a,b);
+      });
+      const keep = cluster.tasks[0];
+      const steps = cluster.tasks.map(inferReviewStepFromTaskPatchV060).filter(v => v != null);
+      keep.start = cluster.range.start;
+      keep.end = cluster.range.end;
+      keep.dueDate = cluster.tasks.map(t => String(t.dueDate || "")).filter(Boolean).sort()[0] || keep.dueDate;
+      keep.createdForDate = keep.dueDate;
+      keep.plannedMinutes = null;
+      keep.weak = weakWorstPatchV060(cluster.tasks.map(t => t.weak));
+      if(steps.length) keep.reviewStep = Math.min(...steps);
+      keep.reviewChainPatch = REVIEW_PATCH_MARK_V060;
+      for(const task of cluster.tasks){
+        if(task.id !== keep.id) removeIds.add(task.id);
+      }
+    }
+    if(removeIds.size) state.tasks = (state.tasks || []).filter(t => !removeIds.has(t.id));
+    return removeIds.size;
+  }
+  function cleanupPendingReviewChainsPatchV060(){
+    let removed = 0;
+    for(const material of (state.materials || [])){
+      if(canPlanRangedMaterialPatchV060(material)) removed += collapsePendingReviewsForMaterialPatchV060(material.id);
+    }
+    return removed;
+  }
+  function pendingNewTasksForMaterialPatchV060(materialId){
+    return (state.tasks || []).filter(t => !t.done && t.type === "new" && t.materialId === materialId && rangeFromPatchV060(t));
+  }
+  function cleanupPendingNewTasksPatchV060(){
+    const removeIds = new Set();
+    for(const material of (state.materials || [])){
+      if(!canPlanRangedMaterialPatchV060(material)) continue;
+      const kept = [];
+      const pending = pendingNewTasksForMaterialPatchV060(material.id).sort(taskSortPatchV060);
+      for(const task of pending){
+        const range = rangeFromPatchV060(task);
+        const overlapsKept = kept.some(k => rangesOverlapPatchV060(rangeFromPatchV060(k), range));
+        if(kept.length < MAX_PENDING_NEW_PER_MATERIAL_PATCH_V060 && !overlapsKept){
+          kept.push(task);
+          continue;
+        }
+        removeIds.add(task.id);
+      }
+    }
+    if(removeIds.size) state.tasks = (state.tasks || []).filter(t => !removeIds.has(t.id));
+    return removeIds.size;
+  }
+  function reservedNewRangesPatchV060(materialId){
+    const material = mat(materialId);
+    if(!canPlanRangedMaterialPatchV060(material)) return [];
+    const target = Array.isArray(material.ranges) ? material.ranges : [];
+    const parts = [];
+    for(const task of pendingNewTasksForMaterialPatchV060(materialId)){
+      const range = rangeFromPatchV060(task);
+      for(const targetRange of target){
+        const part = intersect(range, targetRange);
+        if(part) parts.push(part);
+      }
+    }
+    return mergeRanges(parts);
+  }
+  function availableNewRangesPatchV060(materialId){
+    const material = mat(materialId);
+    if(!canPlanRangedMaterialPatchV060(material)) return [];
+    const blocked = mergeRanges([...(completedRanges(materialId) || []), ...reservedNewRangesPatchV060(materialId)]);
+    return subtractRanges(Array.isArray(material.ranges) ? material.ranges : [], blocked);
+  }
+  function completedReviewCountForRangePatchV060(record){
+    const range = rangeFromPatchV060(record);
+    if(!range) return 0;
+    return (state.records || []).filter(r => r.type === "review" && r.materialId === record.materialId && rangesSamePatchV060(rangeFromPatchV060(r), range)).length;
+  }
+  function nextReviewStepForRecordPatchV060(record, completedTask){
+    if(record.type === "new") return 0;
+    if(record.type !== "review") return null;
+    const taskStep = inferReviewStepFromTaskPatchV060(completedTask);
+    if(taskStep != null) return taskStep + 1;
+    return Math.max(1, completedReviewCountForRangePatchV060(record));
+  }
+  function upsertNextReviewTaskPatchV060(record, completedTask){
+    const material = mat(record.materialId);
+    if(!canPlanRangedMaterialPatchV060(material)) return null;
+    const range = rangeFromPatchV060(record);
+    if(!range) return null;
+    const nextStep = nextReviewStepForRecordPatchV060(record, completedTask);
+    if(nextStep == null || nextStep < 0 || nextStep >= REVIEW_OFFSETS_PATCH_V060.length) return null;
+    const dueDate = addDays(record.date || today(), REVIEW_OFFSETS_PATCH_V060[nextStep]);
+    if(!isNoDeadlineMaterialPatchV060(material) && dueDate > material.deadline) return null;
+    const overlapping = pendingReviewTasksForMaterialPatchV060(record.materialId)
+      .filter(task => (!completedTask || task.id !== completedTask.id) && rangesOverlapPatchV060(rangeFromPatchV060(task), range))
+      .sort(taskSortPatchV060);
+    if(overlapping.length){
+      const keep = overlapping[0];
+      keep.start = range.start;
+      keep.end = range.end;
+      keep.dueDate = dueDate;
+      keep.createdForDate = dueDate;
+      keep.sourceRecordId = record.id;
+      keep.weak = record.weak || keep.weak || "ok";
+      keep.plannedMinutes = null;
+      keep.reviewStep = nextStep;
+      keep.reviewChainPatch = REVIEW_PATCH_MARK_V060;
+      const removeIds = new Set(overlapping.slice(1).map(t => t.id));
+      if(removeIds.size) state.tasks = (state.tasks || []).filter(t => !removeIds.has(t.id));
+      return keep;
+    }
+    const task = {
+      id:id("task"),
+      type:"review",
+      materialId:record.materialId,
+      start:range.start,
+      end:range.end,
+      dueDate,
+      createdForDate:dueDate,
+      sourceRecordId:record.id,
+      weak:record.weak || "ok",
+      plannedMinutes:null,
+      done:false,
+      reviewStep:nextStep,
+      reviewChainPatch:REVIEW_PATCH_MARK_V060,
+      createdAt:new Date().toISOString()
+    };
+    state.tasks.push(task);
+    return task;
+  }
+  function cleanupGeneratedTasksPatchV060(){
+    const removedReviews = cleanupPendingReviewChainsPatchV060();
+    const removedNew = cleanupPendingNewTasksPatchV060();
+    return removedReviews + removedNew;
+  }
+
+  makeReviewTasks = function(record){
+    if(!record || (record.type !== "new" && record.type !== "review")) return;
+    const completedTask = record.taskId ? (state.tasks || []).find(t => t.id === record.taskId) : null;
+    upsertNextReviewTaskPatchV060(record, completedTask);
+    cleanupPendingReviewChainsPatchV060();
+  };
+
+  buildTodayPlan = function(force=false){
+    const date = today();
+    if(force){
+      state.tasks = (state.tasks || []).filter(t => !(t.type === "new" && t.createdForDate === date && !t.done && t.generated));
+    }
+    cleanupGeneratedTasksPatchV060();
+    if(!force && (state.tasks || []).some(t => !t.done && t.type === "new" && t.createdForDate === date && t.generated && isScheduledMaterialPatchV060(mat(t.materialId)))){
+      save();
+      return;
+    }
+    const mode = modeForToday();
+    if(mode === "rest"){ save(); return; }
+    const dueUndone = (state.tasks || []).filter(t => !t.done && t.dueDate <= date && isScheduledMaterialPatchV060(mat(t.materialId)));
+    let cap = Math.max(0, todayCapacity() - dueUndone.reduce((sum,t)=>sum+taskEstimate(t),0));
+    const materials = (state.materials || [])
+      .filter(m => canPlanRangedMaterialPatchV060(m) && isStartedMaterialPatchV060(m, date))
+      .filter(m => pendingNewTasksForMaterialPatchV060(m.id).length < MAX_PENDING_NEW_PER_MATERIAL_PATCH_V060)
+      .map(m => ({m, e:estimate(m)}))
+      .filter(x => x.e.remaining > 0)
+      .sort((a,b)=>{
+        const ad = isNoDeadlineMaterialPatchV060(a.m), bd = isNoDeadlineMaterialPatchV060(b.m);
+        if(ad !== bd) return ad ? 1 : -1;
+        const urgent = daysInc(date, effectiveDeadlinePatchV060(a.m, date)) - daysInc(date, effectiveDeadlinePatchV060(b.m, date));
+        if(urgent !== 0) return urgent;
+        return (priorityMul[b.m.priority] || 1) - (priorityMul[a.m.priority] || 1);
+      });
+    for(const {m,e} of materials){
+      if(cap <= 0) break;
+      if(pendingNewTasksForMaterialPatchV060(m.id).length >= MAX_PENDING_NEW_PER_MATERIAL_PATCH_V060) continue;
+      const remain = availableNewRangesPatchV060(m.id);
+      if(!remain.length) continue;
+      const planDays = Math.max(1, e.planDays || e.days || 1);
+      const requiredUnits = Math.max(1, Math.ceil((e.remaining / planDays) * (priorityMul[m.priority] || 1)));
+      const capUnits = Math.max(1, Math.floor(cap / Math.max(1, e.predicted)));
+      const units = Math.min(requiredUnits, capUnits, rangeLenPatchV060(remain[0]));
+      if(units <= 0) continue;
+      const start = remain[0].start;
+      const end = start + units - 1;
+      const minutes = Math.ceil(units * e.predicted);
+      state.tasks.push({
+        id:id("task"),
+        type:"new",
+        materialId:m.id,
+        start,
+        end,
+        dueDate:date,
+        createdForDate:date,
+        generated:true,
+        weak:"ok",
+        plannedMinutes:minutes,
+        done:false,
+        createdAt:new Date().toISOString()
+      });
+      cap -= minutes;
+      cleanupPendingNewTasksPatchV060();
+    }
+    cleanupGeneratedTasksPatchV060();
+    save();
+  };
+
+  quickDone = function(taskId){
+    const task = (state.tasks || []).find(t => t.id === taskId);
+    if(!task) return;
+    const material = mat(task.materialId);
+    if(!material) return;
+    const record = {
+      id:id("rec"),
+      materialId:task.materialId,
+      type:task.type,
+      date:today(),
+      start:task.start,
+      end:task.end,
+      minutes:taskEstimate(task),
+      difficulty:Number(material.defaultDifficulty || 3),
+      focus:3,
+      weak:task.weak || "ok",
+      memo:"タスクからそのまま完了",
+      taskId:task.id,
+      createdAt:new Date().toISOString()
+    };
+    if(task.type === "new"){
+      const overlap = intersectAny({start:record.start,end:record.end}, completedRanges(record.materialId));
+      if(overlap.length && !confirm("この範囲はすでに一部記録済みです。それでも完了にしますか？")) return;
+    }
+    state.records.push(record);
+    task.done = true;
+    task.doneAt = new Date().toISOString();
+    task.recordId = record.id;
+    if(task.type === "new" || task.type === "review") upsertNextReviewTaskPatchV060(record, task);
+    cleanupGeneratedTasksPatchV060();
+    save();
+    render();
+    toast("完了にしました");
+  };
+
+  function recordKindLabelPatchV060(record){
+    const material = mat(record.materialId);
+    if(isOptionalMaterialPatchV060(material)) return "プラスα";
+    return record.type === "review" ? "復習" : "新規";
+  }
+  function bindRecordFormPatchV060(){
+    const recordForm = document.getElementById("recordForm");
+    if(!recordForm) return;
+    recordForm.onsubmit = e => {
+      e.preventDefault();
+      const taskId = document.getElementById("recordTaskId").value;
+      const materialId = document.getElementById("recMaterial").value;
+      const material = mat(materialId);
+      if(!material){ alert("教材を選んでください。"); return; }
+      const noRange = isNoRangeMaterialPatchV060(material);
+      const record = {
+        id:id("rec"),
+        materialId,
+        type:document.getElementById("recType").value,
+        date:document.getElementById("recDate").value || today(),
+        start:null,
+        end:null,
+        minutes:Number(document.getElementById("recMinutes").value),
+        difficulty:Number(document.getElementById("recDiff").value),
+        focus:Number(document.getElementById("recFocus").value),
+        weak:document.getElementById("recWeak").value,
+        memo:document.getElementById("recMemo").value.trim(),
+        private:Boolean(document.getElementById("recPrivate")?.checked),
+        taskId:taskId || null,
+        createdAt:new Date().toISOString()
+      };
+      if(record.minutes <= 0){ alert("時間を入れてください。"); return; }
+      if(noRange){
+        record.type = "new";
+      } else {
+        const startVal = document.getElementById("recStart").value;
+        const endVal = document.getElementById("recEnd").value;
+        if(startVal === "" || endVal === ""){ alert("範囲開始と範囲終了を入れてください。"); return; }
+        record.start = Number(startVal);
+        record.end = Number(endVal);
+        if(record.start > record.end) [record.start,record.end] = [record.end,record.start];
+        const inTarget = intersectAny({start:record.start,end:record.end}, material.ranges || []);
+        if(!inTarget.length && !confirm("この範囲は教材の対象範囲外です。それでも記録しますか？")) return;
+        if(record.type === "new"){
+          const overlap = intersectAny({start:record.start,end:record.end}, completedRanges(record.materialId));
+          if(overlap.length){
+            const txt = overlap.map(r => rangeText(material,r.start,r.end)).join(", ");
+            if(!confirm(`すでに記録済みの範囲と重なっています：${txt}\nそれでも記録しますか？`)) return;
+          }
+        }
+      }
+      const task = taskId ? (state.tasks || []).find(t => t.id === taskId) : null;
+      state.records.push(record);
+      if(task){
+        task.done = true;
+        task.doneAt = new Date().toISOString();
+        task.recordId = record.id;
+      }
+      const autoReview = Boolean(document.getElementById("recAutoReview")?.checked);
+      const shouldScheduleReview = !noRange && ((record.type === "new" && autoReview) || record.type === "review");
+      if(shouldScheduleReview) upsertNextReviewTaskPatchV060(record, task);
+      cleanupGeneratedTasksPatchV060();
+      save();
+      document.getElementById("recordForm").reset();
+      document.getElementById("recordTitle").textContent = "学習を記録";
+      document.getElementById("recordTaskId").value = "";
+      document.getElementById("recDate").value = today();
+      document.getElementById("recDiff").value = 3;
+      document.getElementById("recFocus").value = 3;
+      document.getElementById("recWeak").value = "ok";
+      document.getElementById("recAutoReview").checked = true;
+      const privateInput = document.getElementById("recPrivate");
+      if(privateInput) privateInput.checked = false;
+      resetStopwatch();
+      render();
+      toast("記録しました");
+    };
+  }
+
+  const oldRenderTodayPatchV060 = renderToday;
+  renderToday = function(){
+    const removed = cleanupGeneratedTasksPatchV060();
+    if(removed) save();
+    return oldRenderTodayPatchV060.apply(this, arguments);
+  };
+
+  const oldRenderTasksPatchV060 = renderTasks;
+  renderTasks = function(){
+    const removed = cleanupGeneratedTasksPatchV060();
+    if(removed) save();
+    return oldRenderTasksPatchV060.apply(this, arguments);
+  };
+
+  const oldRenderPatchV060 = render;
+  render = function(){
+    const removed = cleanupGeneratedTasksPatchV060();
+    const result = oldRenderPatchV060.apply(this, arguments);
+    bindRecordFormPatchV060();
+    if(removed) save();
+    return result;
+  };
+
+  const oldRecordItemPatchV060 = recordItem;
+  recordItem = function(record){
+    const item = oldRecordItemPatchV060.apply(this, arguments);
+    const line = item?.querySelector?.(".item-head .small");
+    if(line){
+      const parts = line.textContent.split(" / ");
+      if(parts.length >= 3){
+        parts[1] = recordKindLabelPatchV060(record);
+        line.textContent = parts.join(" / ");
+      }
+    }
+    return item;
+  };
+
+  cleanupGeneratedTasksPatchV060();
+  bindRecordFormPatchV060();
+  try{ render(); }catch(e){ console.error("v0.6.0 review task generation patch failed", e); }
 })();
 </script>
 
