@@ -674,7 +674,7 @@
           <div class="item-head">
             <h2>今日やること</h2>
             <div class="actions">
-              <button class="secondary" id="regenPlan">今日の計画を作り直す</button>
+              <button class="secondary" id="regenPlan">今日の計画を再計算</button>
             </div>
           </div>
           <div id="todayNotice"></div>
@@ -1482,7 +1482,7 @@ function renderToday(){
 
   const notice=document.getElementById("todayNotice");
   if(!due.length){
-    notice.innerHTML='<div class="notice good">今日の未完了タスクはありません。教材を登録するか、「今日の計画を作り直す」を押してください。</div>';
+    notice.innerHTML='<div class="notice good">今日の未完了タスクはありません。教材を登録するか、「今日の計画を再計算」を押してください。</div>';
   } else if(total>todayCapacity() && modeForToday()!=="rest"){
     notice.innerHTML=`<div class="notice bad">今日のタスク合計が、今日の設定時間を約${fmtMin(total-todayCapacity())}超えています。軽めにするなら「最低限」へ変更して計画を作り直してください。</div>`;
   } else {
@@ -2970,7 +2970,7 @@ initCloud();
     document.getElementById("metricWarnings").textContent=w.length+"件";
     document.getElementById("todayMode").value=modeForToday();
     const notice=document.getElementById("todayNotice");
-    if(!due.length){ notice.innerHTML='<div class="notice good">今日の未完了タスクはありません。開始日を迎えた教材があれば、「今日の計画を作り直す」で作成できます。</div>'; }
+    if(!due.length){ notice.innerHTML='<div class="notice good">今日の未完了タスクはありません。開始日を迎えた教材があれば、「今日の計画を再計算」で作成できます。</div>'; }
     else if(total>todayCapacity() && modeForToday()!=="rest"){ notice.innerHTML=`<div class="notice bad">持ち越し・復習を含めた合計が、今日の上限を約${fmtMin(total-todayCapacity())}超えています。未完了タスクは消さずに持ち越します。</div>`; }
     else { notice.innerHTML='<div class="notice good">未完了タスクはそのまま持ち越し、新規タスクは残り時間に収まる範囲で作成します。</div>'; }
     const list=document.getElementById("todayTasks");
@@ -5928,7 +5928,9 @@ initCloud();
       state.tasks = (state.tasks || []).filter(t => !(t.type === "new" && t.createdForDate === date && !t.done && t.generated));
     }
     cleanupGeneratedTasksPatchV060();
-    if(!force && (state.tasks || []).some(t => !t.done && t.type === "new" && t.createdForDate === date && t.generated && isScheduledMaterialPatchV060(mat(t.materialId)))){
+    const hasTodayGeneratedNewTask = (state.tasks || []).some(t => t.type === "new" && t.createdForDate === date && t.generated && isScheduledMaterialPatchV060(mat(t.materialId)));
+    const suppressAutoFill = Boolean(globalThis.__suppressTodayPlanAutoFillV070);
+    if(!force && (suppressAutoFill || hasTodayGeneratedNewTask)){
       save();
       return;
     }
@@ -6096,11 +6098,72 @@ initCloud();
     };
   }
 
+  function renderWithoutTodayPlanAutoFillPatchV070(){
+    globalThis.__suppressTodayPlanAutoFillV070 = true;
+    try{
+      render();
+    } finally {
+      globalThis.__suppressTodayPlanAutoFillV070 = false;
+    }
+  }
+
+  function bindTodayPlanRecalculatePatchV070(){
+    const regenBtn = document.getElementById("regenPlan");
+    if(regenBtn){
+      regenBtn.textContent = "今日の計画を再計算";
+      regenBtn.onclick = () => {
+        if(!confirm("今日の未完了・自動生成の新規学習タスクを、現在の進捗に合わせて再計算します。完了済みタスク、記録、復習タスク、持ち越しタスクは残ります。")) return;
+        buildTodayPlan(true);
+        render();
+        toast("今日の計画を再計算しました");
+      };
+    }
+
+    const modeForm = document.getElementById("modeForm");
+    if(modeForm){
+      modeForm.onsubmit = e => {
+        e.preventDefault();
+        state.settings.todayModes[today()] = document.getElementById("todayMode").value;
+        save();
+        renderWithoutTodayPlanAutoFillPatchV070();
+        toast("今日のモードを保存しました。必要なら「今日の計画を再計算」を押してください");
+      };
+    }
+
+    const capacityForm = document.getElementById("capacityForm");
+    if(capacityForm){
+      capacityForm.onsubmit = e => {
+        e.preventDefault();
+        for(let i=0;i<7;i++) state.settings.capacities[i] = Number(document.getElementById("cap"+i).value || 0);
+        save();
+        renderWithoutTodayPlanAutoFillPatchV070();
+        toast("曜日別時間を保存しました。必要なら「今日の計画を再計算」を押してください");
+      };
+    }
+
+    const boundaryForm = document.getElementById("boundaryForm");
+    if(boundaryForm){
+      boundaryForm.onsubmit = e => {
+        e.preventDefault();
+        state.settings.dayBoundaryHour = Number(document.getElementById("dayBoundaryHour").value);
+        document.getElementById("recDate").value = today();
+        save();
+        renderWithoutTodayPlanAutoFillPatchV070();
+        toast("日付変更時刻を保存しました。必要なら「今日の計画を再計算」を押してください");
+      };
+    }
+
+    const notice = document.getElementById("todayNotice");
+    if(notice) notice.innerHTML = notice.innerHTML.replaceAll("今日の計画を作り直す", "今日の計画を再計算");
+  }
+
   const oldRenderTodayPatchV060 = renderToday;
   renderToday = function(){
     const removed = cleanupGeneratedTasksPatchV060();
     if(removed) save();
-    return oldRenderTodayPatchV060.apply(this, arguments);
+    const result = oldRenderTodayPatchV060.apply(this, arguments);
+    bindTodayPlanRecalculatePatchV070();
+    return result;
   };
 
   const oldRenderTasksPatchV060 = renderTasks;
@@ -6115,6 +6178,7 @@ initCloud();
     const removed = cleanupGeneratedTasksPatchV060();
     const result = oldRenderPatchV060.apply(this, arguments);
     bindRecordFormPatchV060();
+    bindTodayPlanRecalculatePatchV070();
     if(removed) save();
     return result;
   };
