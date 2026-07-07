@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>学習負荷プランナー v0.6.0</title>
+  <title>学習負荷プランナー v0.7.0</title>
   <style>
     :root {
       --bg: #f7f3ee;
@@ -350,14 +350,249 @@
       background:linear-gradient(180deg, transparent 0 24%, rgba(255,255,255,.08) 24% 25%, transparent 25% 49%, rgba(255,255,255,.08) 49% 50%, transparent 50% 74%, rgba(255,255,255,.08) 74% 75%, transparent 75% 100%);
     }
 
+    /* v0.7.0 UI refresh: practical app styling only */
+    :root {
+      --bg:#f5f6f8;
+      --card:#ffffff;
+      --ink:#1f2933;
+      --muted:#667085;
+      --line:#d9dee7;
+      --accent:#2563eb;
+      --accent2:#5b7fd6;
+      --good:#207a4c;
+      --warn:#a76013;
+      --bad:#b42318;
+      --blue:#2563eb;
+      --shadow:0 1px 2px rgba(16,24,40,.06);
+      --r:10px;
+    }
+    body,
+    body[data-theme="light"],
+    body[data-theme="pink"],
+    body[data-theme="blue"] {
+      color:var(--ink);
+      background:#f5f6f8;
+    }
+    header, main { max-width:1180px; padding:14px 18px; }
+    header { padding-top:16px; padding-bottom:0; }
+    .head { align-items:center; }
+    h1 { font-size:clamp(22px,3vw,30px); letter-spacing:0; font-weight:800; }
+    h2 { font-size:16px; letter-spacing:0; }
+    h3 { font-size:14px; letter-spacing:0; }
+    .sub { margin-top:4px; font-size:13px; color:var(--muted); }
+    .tabs {
+      gap:4px;
+      padding:8px 0;
+      margin:8px 0 12px;
+      background:rgba(245,246,248,.96);
+      border-bottom:1px solid var(--line);
+      backdrop-filter:none;
+      overflow-x:auto;
+      flex-wrap:nowrap;
+      scrollbar-width:none;
+    }
+    .tabs::-webkit-scrollbar { display:none; }
+    .tab, button, .filebtn {
+      border-radius:8px;
+      padding:9px 12px;
+      font-weight:700;
+      box-shadow:none;
+    }
+    .tab {
+      flex:0 0 auto;
+      background:transparent;
+      color:#344054;
+      border:1px solid transparent;
+    }
+    .tab.active {
+      background:#ffffff;
+      color:var(--accent);
+      border-color:var(--line);
+      box-shadow:0 1px 2px rgba(16,24,40,.06);
+    }
+    button, .filebtn {
+      background:var(--accent);
+      color:#fff;
+      border:1px solid var(--accent);
+    }
+    button.secondary, .filebtn.secondary {
+      background:#ffffff;
+      color:#344054;
+      border:1px solid var(--line);
+    }
+    button.ghost {
+      background:#ffffff;
+      color:#344054;
+      border:1px solid var(--line);
+    }
+    button.danger { background:var(--bad); border-color:var(--bad); color:#fff; }
+    .grid { gap:12px; }
+    .card {
+      background:#ffffff;
+      border:1px solid var(--line);
+      border-radius:10px;
+      box-shadow:var(--shadow);
+      padding:14px;
+    }
+    .item,
+    .statbox,
+    .detail-panel,
+    .day-card,
+    .timer-box,
+    .auth-message,
+    .vchart-wrap {
+      background:#ffffff;
+      border:1px solid var(--line);
+      border-radius:9px;
+      box-shadow:none;
+    }
+    .item { padding:11px; }
+    .metric { font-size:24px; font-weight:800; }
+    .small { color:var(--muted); }
+    label { color:#344054; font-weight:700; }
+    input, select, textarea {
+      border-radius:8px;
+      border-color:#cfd6e2;
+      background:#fff;
+      color:var(--ink);
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color:var(--accent);
+      box-shadow:0 0 0 3px rgba(37,99,235,.12);
+    }
+    .notice {
+      border-radius:9px;
+      border-color:#d9dee7;
+      background:#f8fafc;
+      color:#344054;
+    }
+    .notice.good, .auth-message.good {
+      border-color:#b7dfc9;
+      background:#f0f9f4;
+      color:#17623d;
+    }
+    .notice.bad, .auth-message.bad, .dangerbox {
+      border-color:#f0b8b2;
+      background:#fff3f2;
+      color:#912018;
+    }
+    .empty {
+      border-radius:9px;
+      background:#f8fafc;
+      border-color:#d9dee7;
+      color:var(--muted);
+    }
+    .badge, .cloud-pill {
+      border-radius:6px;
+      background:#eef2f6;
+      color:#344054;
+      font-weight:700;
+    }
+    .badge.good, .cloud-pill.good { color:#17623d; background:#e9f7ef; }
+    .badge.warn, .cloud-pill.warn { color:#8a4b0f; background:#fff3df; }
+    .badge.bad, .cloud-pill.bad { color:#912018; background:#fff0ee; }
+    .badge.blue { color:#1849a9; background:#eff4ff; }
+    .progress, .bartrack { background:#e8edf3; border-radius:999px; }
+    .bar, .barfill, .vbar { background:var(--accent); }
+    .auth-status {
+      background:#ffffff;
+      border-color:var(--line);
+      border-radius:8px;
+      box-shadow:none;
+    }
+    .tasknum {
+      border-radius:8px;
+      background:#eef2f6;
+      color:#344054;
+    }
+    .toast { border-radius:8px; background:#1f2933; font-weight:700; }
+    .divider { background:#e4e7ec; }
+    .segmented { gap:4px; }
+    .segmented button {
+      background:#ffffff;
+      color:#344054;
+      border:1px solid var(--line);
+    }
+    .segmented button.active {
+      background:#eff4ff;
+      color:#1849a9;
+      border-color:#b2ccff;
+    }
+    .vchart {
+      background:#ffffff;
+      border-color:#d9dee7;
+    }
+    body[data-theme="dark"] {
+      --bg:#111827;
+      --card:#1f2937;
+      --ink:#f9fafb;
+      --muted:#cbd5e1;
+      --line:#374151;
+      --accent:#60a5fa;
+      --accent2:#60a5fa;
+      background:#111827;
+    }
+    body[data-theme="dark"] .tabs { background:rgba(17,24,39,.96); border-color:var(--line); }
+    body[data-theme="dark"] .card,
+    body[data-theme="dark"] .tab.active,
+    body[data-theme="dark"] .item,
+    body[data-theme="dark"] .statbox,
+    body[data-theme="dark"] .detail-panel,
+    body[data-theme="dark"] .day-card,
+    body[data-theme="dark"] .timer-box,
+    body[data-theme="dark"] .auth-message,
+    body[data-theme="dark"] .vchart-wrap,
+    body[data-theme="dark"] .auth-status {
+      background:#1f2937;
+      border-color:var(--line);
+      color:var(--ink);
+    }
+    body[data-theme="dark"] input,
+    body[data-theme="dark"] select,
+    body[data-theme="dark"] textarea {
+      background:#111827;
+      border-color:#4b5563;
+      color:var(--ink);
+    }
+    body[data-theme="dark"] button.secondary,
+    body[data-theme="dark"] .filebtn.secondary,
+    body[data-theme="dark"] button.ghost,
+    body[data-theme="dark"] .segmented button {
+      background:#111827;
+      color:var(--ink);
+      border-color:#4b5563;
+    }
+    body[data-theme="dark"] .tab { color:#d1d5db; }
+    body[data-theme="dark"] .notice,
+    body[data-theme="dark"] .empty {
+      background:#172033;
+      border-color:#374151;
+      color:#d1d5db;
+    }
+    body[data-theme="dark"] .badge,
+    body[data-theme="dark"] .cloud-pill,
+    body[data-theme="dark"] .tasknum {
+      background:#374151;
+      color:#f9fafb;
+    }
+    @media (max-width: 760px) {
+      header, main { padding-left:10px; padding-right:10px; }
+      .card { padding:12px; }
+      .tabs { margin-left:-10px; margin-right:-10px; padding-left:10px; padding-right:10px; }
+      .tab { padding:8px 10px; }
+      .metric { font-size:22px; }
+      .auth-form.password { grid-template-columns:1fr; }
+      .item-head { gap:8px; }
+    }
+
   </style>
 </head>
 <body>
   <header>
     <div class="head">
       <div>
-        <h1>学習負荷プランナー v0.6.0</h1>
-        <p class="sub">計画対象/自由記録教材、期限なし、自由記録の範囲なし、分析の合計/内訳切り替えに対応。</p>
+        <h1>学習負荷プランナー v0.7.0</h1>
+        <p class="sub">学習計画、記録、共有をまとめて管理できます。</p>
       </div>
       <div class="actions">
         <span class="auth-status" id="cloudStatus"><span class="dot" id="cloudDot"></span><span id="cloudStatusText">未ログイン</span></span>
@@ -439,7 +674,7 @@
           <div class="item-head">
             <h2>今日やること</h2>
             <div class="actions">
-              <button class="secondary" id="regenPlan">今日の計画を作り直す</button>
+              <button class="secondary" id="regenPlan">今日の計画を再計算</button>
             </div>
           </div>
           <div id="todayNotice"></div>
@@ -1247,7 +1482,7 @@ function renderToday(){
 
   const notice=document.getElementById("todayNotice");
   if(!due.length){
-    notice.innerHTML='<div class="notice good">今日の未完了タスクはありません。教材を登録するか、「今日の計画を作り直す」を押してください。</div>';
+    notice.innerHTML='<div class="notice good">今日の未完了タスクはありません。教材を登録するか、「今日の計画を再計算」を押してください。</div>';
   } else if(total>todayCapacity() && modeForToday()!=="rest"){
     notice.innerHTML=`<div class="notice bad">今日のタスク合計が、今日の設定時間を約${fmtMin(total-todayCapacity())}超えています。軽めにするなら「最低限」へ変更して計画を作り直してください。</div>`;
   } else {
@@ -2735,7 +2970,7 @@ initCloud();
     document.getElementById("metricWarnings").textContent=w.length+"件";
     document.getElementById("todayMode").value=modeForToday();
     const notice=document.getElementById("todayNotice");
-    if(!due.length){ notice.innerHTML='<div class="notice good">今日の未完了タスクはありません。開始日を迎えた教材があれば、「今日の計画を作り直す」で作成できます。</div>'; }
+    if(!due.length){ notice.innerHTML='<div class="notice good">今日の未完了タスクはありません。開始日を迎えた教材があれば、「今日の計画を再計算」で作成できます。</div>'; }
     else if(total>todayCapacity() && modeForToday()!=="rest"){ notice.innerHTML=`<div class="notice bad">持ち越し・復習を含めた合計が、今日の上限を約${fmtMin(total-todayCapacity())}超えています。未完了タスクは消さずに持ち越します。</div>`; }
     else { notice.innerHTML='<div class="notice good">未完了タスクはそのまま持ち越し、新規タスクは残り時間に収まる範囲で作成します。</div>'; }
     const list=document.getElementById("todayTasks");
@@ -2915,9 +3150,9 @@ initCloud();
   }
 
   function ensureV056Dom(){
-    document.title = "学習負荷プランナー v0.5.8";
+    document.title = "学習負荷プランナー v0.7.0";
     const h1 = document.querySelector("h1");
-    if(h1) h1.textContent = "学習負荷プランナー v0.5.8";
+    if(h1) h1.textContent = "学習負荷プランナー v0.7.0";
     const sub = document.querySelector("header .sub");
     if(sub) sub.textContent = "分析グラフ修正、プラスα記録の種類非表示、範囲なし教材の入力整理に対応。";
 
@@ -3739,8 +3974,8 @@ initCloud();
   }
 
   function ensureV057Dom(){
-    document.title = "学習負荷プランナー v0.5.8";
-    const h1=document.querySelector("h1"); if(h1) h1.textContent="学習負荷プランナー v0.5.8";
+    document.title = "学習負荷プランナー v0.7.0";
+    const h1=document.querySelector("h1"); if(h1) h1.textContent="学習負荷プランナー v0.7.0";
     const sub=document.querySelector("header .sub"); if(sub) sub.textContent="分析グラフ修正、プラスα記録の種類非表示、範囲なし教材の入力整理に対応。";
 
     const recType=document.getElementById("recType");
@@ -3989,13 +4224,13 @@ initCloud();
       <style id="v059Style">
         .sync-status-panel { margin-top:14px; }
         .sync-status-grid { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:8px; margin:10px 0; }
-        .sync-status-cell { border:1px solid var(--line); border-radius:14px; padding:10px; background:rgba(255,255,255,.56); min-height:62px; }
+        .sync-status-cell { border:1px solid var(--line); border-radius:8px; padding:10px; background:#ffffff; min-height:62px; box-shadow:none; }
         .sync-status-cell .label { color:var(--muted); font-size:12px; line-height:1.4; }
         .sync-status-cell .value { margin-top:4px; font-weight:800; font-size:13px; line-height:1.45; overflow-wrap:anywhere; }
         .sync-status-cell.good .value { color:var(--good); }
         .sync-status-cell.warn .value { color:var(--warn); }
         .sync-status-cell.bad .value { color:var(--bad); }
-        body[data-theme="dark"] .sync-status-cell { background:#312d2a; }
+        body[data-theme="dark"] .sync-status-cell { background:#1f2937; }
         @media (max-width:900px){ .sync-status-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); } }
         @media (max-width:520px){ .sync-status-grid { grid-template-columns:1fr; } }
       </style>`);
@@ -4076,11 +4311,11 @@ initCloud();
 
   function ensureV059Dom(){
     ensureV059Styles();
-    document.title = "学習負荷プランナー v0.6.0";
+    document.title = "学習負荷プランナー v0.7.0";
     const h1 = document.querySelector("h1");
-    if(h1) h1.textContent = "学習負荷プランナー v0.6.0";
+    if(h1) h1.textContent = "学習負荷プランナー v0.7.0";
     const sub = document.querySelector("header .sub");
-    if(sub) sub.textContent = "閲覧専用共有、記録ごとの非公開、共有用スナップショットに対応。";
+    if(sub) sub.textContent = "学習計画、記録、共有をまとめて管理できます。";
 
     const settingsGrid = document.querySelector("#settings .grid");
     if(settingsGrid && !document.getElementById("syncSafetyPanel")){
@@ -4257,15 +4492,15 @@ initCloud();
     if(document.getElementById("v060-sharing-style")) return;
     document.head.insertAdjacentHTML("beforeend", `<style id="v060-sharing-style">
       .share-code-box { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px; }
-      .share-code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing:.08em; font-weight:900; padding:8px 10px; border:1px dashed var(--line); border-radius:12px; background:rgba(255,255,255,.62); }
+      .share-code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing:0; font-weight:900; padding:8px 10px; border:1px dashed var(--line); border-radius:8px; background:#ffffff; }
       .share-grid { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:8px; margin:10px 0; }
-      .share-mini { border:1px solid var(--line); border-radius:14px; padding:10px; background:rgba(255,255,255,.55); }
+      .share-mini { border:1px solid var(--line); border-radius:8px; padding:10px; background:#ffffff; box-shadow:none; }
       .share-mini .label { color:var(--muted); font-size:12px; }
       .share-mini .value { font-size:18px; font-weight:900; margin-top:2px; }
       .share-record-row { display:flex; justify-content:space-between; gap:12px; padding:8px 0; border-top:1px solid var(--line); }
       .share-record-row:first-child { border-top:0; }
       .share-muted { color:var(--muted); font-size:12px; }
-      body[data-theme="dark"] .share-code, body[data-theme="dark"] .share-mini { background:#312d2a; }
+      body[data-theme="dark"] .share-code, body[data-theme="dark"] .share-mini { background:#1f2937; }
       @media (max-width:900px){ .share-grid { grid-template-columns:1fr; } }
     </style>`);
   }
@@ -4301,7 +4536,9 @@ initCloud();
   }
 
   function recordKindForShareV060(r){
-    if(typeof recordKindLabelV057 === "function") return recordKindLabelV057(r);
+    const m = mat(r.materialId);
+    const optional = Boolean(m && (m.planningMode === "optional" || m.scope === "optional" || m.isOptional === true || m.optional === true));
+    if(optional) return "プラスα";
     return r.type === "review" ? "復習" : "新規";
   }
 
@@ -4590,11 +4827,11 @@ initCloud();
 
   function ensureV060Dom(){
     ensureV060Styles();
-    document.title = "学習負荷プランナー v0.6.0";
+    document.title = "学習負荷プランナー v0.7.0";
     const h1 = document.querySelector("h1");
-    if(h1) h1.textContent = "学習負荷プランナー v0.6.0";
+    if(h1) h1.textContent = "学習負荷プランナー v0.7.0";
     const sub = document.querySelector("header .sub");
-    if(sub) sub.textContent = "閲覧専用共有、記録ごとの非公開、共有用スナップショットに対応。";
+    if(sub) sub.textContent = "学習計画、記録、共有をまとめて管理できます。";
 
     const tabs = document.querySelector(".tabs");
     if(tabs && !document.querySelector('.tab[data-tab="sharing"]')){
@@ -4676,6 +4913,17 @@ initCloud();
     }
 
     const updates = document.querySelector("#updates .grid");
+    if(updates && !document.getElementById("updateV070Card")){
+      updates.insertAdjacentHTML("afterbegin", `
+        <div class="card span-12" id="updateV070Card">
+          <h2>v0.7.0</h2>
+          <div class="list">
+            <div class="item"><div class="title">実用ツールらしい見た目に整理</div><div class="small">背景、カード、ボタン、タブを白〜薄いグレー中心の落ち着いたデザインに調整しました。</div></div>
+            <div class="item"><div class="title">スマホで見やすい余白に調整</div><div class="small">画面幅が狭い時もタブを横に動かせるようにし、カードや入力欄の余白を見直しました。</div></div>
+            <div class="item"><div class="title">機能と保存データはそのまま</div><div class="small">保存JSON、Supabase連携、タスク生成、復習生成、共有機能の動きは変更していません。</div></div>
+          </div>
+        </div>`);
+    }
     if(updates && !document.getElementById("updateV060Card")){
       updates.insertAdjacentHTML("afterbegin", `
         <div class="card span-12" id="updateV060Card">
@@ -4689,7 +4937,7 @@ initCloud();
     }
     if(updates){
       const topNotice = updates.querySelector(".notice.good");
-      if(topNotice) topNotice.innerHTML = "v0.6.0では、メイン保存データを直接読ませず、共有用に加工したスナップショットだけを相手が閲覧できる共有機能を追加しました。本番反映前に必ずバックアップを書き出してください。";
+      if(topNotice) topNotice.innerHTML = "v0.7.0では、保存データやタスク生成の仕組みは変えず、見た目だけを実用的な学習管理アプリ風に整えました。本番反映前に必ずバックアップを書き出してください。";
       const dataMemo = [...updates.querySelectorAll(".card")].find(c=>c.querySelector("h2")?.textContent.trim()==="データ保護メモ");
       const memoNotice = dataMemo?.querySelector(".notice");
       if(memoNotice) memoNotice.innerHTML = "共有機能ではSupabaseに新しい3テーブルを追加します。既存のstudy_planner_dataと保存JSON本体は維持しますが、記録には非公開フラグが追加される場合があります。";
@@ -5434,6 +5682,521 @@ initCloud();
   cleanupPendingReviewChains();
   bindReviewChainRecordForm();
   try{ render(); }catch(e){}
+})();
+</script>
+
+<script>
+/* v0.6.0 test patch: review task generation and new-task reservation */
+(function(){
+  const REVIEW_OFFSETS_PATCH_V060 = (typeof REVIEW_OFFSETS !== "undefined" && Array.isArray(REVIEW_OFFSETS)) ? REVIEW_OFFSETS : [1,3,7,14];
+  const MAX_PENDING_NEW_PER_MATERIAL_PATCH_V060 = 2;
+  const REVIEW_PATCH_MARK_V060 = "v060-review-task-generation";
+
+  function isOptionalMaterialPatchV060(m){
+    return Boolean(m && (m.planningMode === "optional" || m.scope === "optional" || m.isOptional === true || m.optional === true));
+  }
+  function isNoRangeMaterialPatchV060(m){
+    return Boolean(m && (m.rangeMode === "none" || m.noRange === true || m.rangeType === "none" || (isOptionalMaterialPatchV060(m) && (!Array.isArray(m.ranges) || !m.ranges.length))));
+  }
+  function isNoDeadlineMaterialPatchV060(m){ return Boolean(m && (m.noDeadline || !m.deadline)); }
+  function isScheduledMaterialPatchV060(m){ return Boolean(m && !isOptionalMaterialPatchV060(m)); }
+  function canPlanRangedMaterialPatchV060(m){ return isScheduledMaterialPatchV060(m) && !isNoRangeMaterialPatchV060(m); }
+  function isStartedMaterialPatchV060(m, ref){ return !(m && m.startDate && m.startDate > ref); }
+  function effectiveDeadlinePatchV060(m, ref){ return isNoDeadlineMaterialPatchV060(m) ? addDays(ref, 29) : m.deadline; }
+  function numPatchV060(value){
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  }
+  function rangeFromPatchV060(obj){
+    const s = numPatchV060(obj && obj.start);
+    const e = numPatchV060(obj && obj.end);
+    if(s == null || e == null) return null;
+    return {start:Math.min(s,e), end:Math.max(s,e)};
+  }
+  function rangeLenPatchV060(range){ return range ? Math.max(0, range.end - range.start + 1) : 0; }
+  function rangesOverlapPatchV060(a,b){ return Boolean(a && b && a.start <= b.end && b.start <= a.end); }
+  function rangesSamePatchV060(a,b){ return Boolean(a && b && a.start === b.start && a.end === b.end); }
+  function dateDiffPatchV060(a,b){
+    if(!a || !b) return null;
+    return Math.round((dateObj(b) - dateObj(a)) / 86400000);
+  }
+  function taskSortPatchV060(a,b){
+    const ar = rangeFromPatchV060(a), br = rangeFromPatchV060(b);
+    if(ar && br){
+      if(ar.start !== br.start) return ar.start - br.start;
+      if(ar.end !== br.end) return ar.end - br.end;
+    }
+    const ad = String(a.dueDate || ""), bd = String(b.dueDate || "");
+    if(ad !== bd) return ad < bd ? -1 : 1;
+    const ac = String(a.createdAt || ""), bc = String(b.createdAt || "");
+    if(ac !== bc) return ac < bc ? -1 : 1;
+    return String(a.id || "").localeCompare(String(b.id || ""));
+  }
+  function weakWorstPatchV060(values){
+    const score = {ok:0, uncertain:1, weak:2, redo:3};
+    let label = "ok", best = -1;
+    for(const value of values){
+      const key = value || "ok";
+      const s = score[key] ?? 0;
+      if(s > best){ best = s; label = key; }
+    }
+    return label;
+  }
+  function inferReviewStepFromTaskPatchV060(task){
+    if(!task) return null;
+    const direct = Number(task.reviewStep);
+    if(Number.isFinite(direct)) return Math.max(0, Math.min(REVIEW_OFFSETS_PATCH_V060.length - 1, Math.floor(direct)));
+    const source = (state.records || []).find(r => r.id === task.sourceRecordId);
+    const diff = source ? dateDiffPatchV060(source.date, task.dueDate || task.createdForDate) : null;
+    const idx = REVIEW_OFFSETS_PATCH_V060.indexOf(diff);
+    return idx >= 0 ? idx : null;
+  }
+  function pendingReviewTasksForMaterialPatchV060(materialId){
+    return (state.tasks || []).filter(t => !t.done && t.type === "review" && t.materialId === materialId && rangeFromPatchV060(t));
+  }
+  function collapsePendingReviewsForMaterialPatchV060(materialId){
+    const tasks = pendingReviewTasksForMaterialPatchV060(materialId).sort(taskSortPatchV060);
+    if(tasks.length < 2) return 0;
+    const clusters = [];
+    for(const task of tasks){
+      const range = rangeFromPatchV060(task);
+      let cluster = clusters.find(c => rangesOverlapPatchV060(c.range, range));
+      if(!cluster){
+        clusters.push({range:{...range}, tasks:[task]});
+        continue;
+      }
+      cluster.range.start = Math.min(cluster.range.start, range.start);
+      cluster.range.end = Math.max(cluster.range.end, range.end);
+      cluster.tasks.push(task);
+    }
+    const removeIds = new Set();
+    for(const cluster of clusters){
+      if(cluster.tasks.length < 2) continue;
+      cluster.tasks.sort((a,b)=>{
+        const ad = String(a.dueDate || ""), bd = String(b.dueDate || "");
+        if(ad !== bd) return ad < bd ? -1 : 1;
+        const as = inferReviewStepFromTaskPatchV060(a);
+        const bs = inferReviewStepFromTaskPatchV060(b);
+        if(as != null && bs != null && as !== bs) return as - bs;
+        if(as != null && bs == null) return -1;
+        if(as == null && bs != null) return 1;
+        return taskSortPatchV060(a,b);
+      });
+      const keep = cluster.tasks[0];
+      const steps = cluster.tasks.map(inferReviewStepFromTaskPatchV060).filter(v => v != null);
+      keep.start = cluster.range.start;
+      keep.end = cluster.range.end;
+      keep.dueDate = cluster.tasks.map(t => String(t.dueDate || "")).filter(Boolean).sort()[0] || keep.dueDate;
+      keep.createdForDate = keep.dueDate;
+      keep.plannedMinutes = null;
+      keep.weak = weakWorstPatchV060(cluster.tasks.map(t => t.weak));
+      if(steps.length) keep.reviewStep = Math.min(...steps);
+      keep.reviewChainPatch = REVIEW_PATCH_MARK_V060;
+      for(const task of cluster.tasks){
+        if(task.id !== keep.id) removeIds.add(task.id);
+      }
+    }
+    if(removeIds.size) state.tasks = (state.tasks || []).filter(t => !removeIds.has(t.id));
+    return removeIds.size;
+  }
+  function cleanupPendingReviewChainsPatchV060(){
+    let removed = 0;
+    for(const material of (state.materials || [])){
+      if(canPlanRangedMaterialPatchV060(material)) removed += collapsePendingReviewsForMaterialPatchV060(material.id);
+    }
+    return removed;
+  }
+  function pendingNewTasksForMaterialPatchV060(materialId){
+    return (state.tasks || []).filter(t => !t.done && t.type === "new" && t.materialId === materialId && rangeFromPatchV060(t));
+  }
+  function cleanupPendingNewTasksPatchV060(){
+    const removeIds = new Set();
+    for(const material of (state.materials || [])){
+      if(!canPlanRangedMaterialPatchV060(material)) continue;
+      const kept = [];
+      const pending = pendingNewTasksForMaterialPatchV060(material.id).sort(taskSortPatchV060);
+      for(const task of pending){
+        const range = rangeFromPatchV060(task);
+        const overlapsKept = kept.some(k => rangesOverlapPatchV060(rangeFromPatchV060(k), range));
+        if(kept.length < MAX_PENDING_NEW_PER_MATERIAL_PATCH_V060 && !overlapsKept){
+          kept.push(task);
+          continue;
+        }
+        removeIds.add(task.id);
+      }
+    }
+    if(removeIds.size) state.tasks = (state.tasks || []).filter(t => !removeIds.has(t.id));
+    return removeIds.size;
+  }
+  function reservedNewRangesPatchV060(materialId){
+    const material = mat(materialId);
+    if(!canPlanRangedMaterialPatchV060(material)) return [];
+    const target = Array.isArray(material.ranges) ? material.ranges : [];
+    const parts = [];
+    for(const task of pendingNewTasksForMaterialPatchV060(materialId)){
+      const range = rangeFromPatchV060(task);
+      for(const targetRange of target){
+        const part = intersect(range, targetRange);
+        if(part) parts.push(part);
+      }
+    }
+    return mergeRanges(parts);
+  }
+  function availableNewRangesPatchV060(materialId){
+    const material = mat(materialId);
+    if(!canPlanRangedMaterialPatchV060(material)) return [];
+    const blocked = mergeRanges([...(completedRanges(materialId) || []), ...reservedNewRangesPatchV060(materialId)]);
+    return subtractRanges(Array.isArray(material.ranges) ? material.ranges : [], blocked);
+  }
+  function completedReviewCountForRangePatchV060(record){
+    const range = rangeFromPatchV060(record);
+    if(!range) return 0;
+    return (state.records || []).filter(r => r.type === "review" && r.materialId === record.materialId && rangesSamePatchV060(rangeFromPatchV060(r), range)).length;
+  }
+  function nextReviewStepForRecordPatchV060(record, completedTask){
+    if(record.type === "new") return 0;
+    if(record.type !== "review") return null;
+    const taskStep = inferReviewStepFromTaskPatchV060(completedTask);
+    if(taskStep != null) return taskStep + 1;
+    return Math.max(1, completedReviewCountForRangePatchV060(record));
+  }
+  function upsertNextReviewTaskPatchV060(record, completedTask){
+    const material = mat(record.materialId);
+    if(!canPlanRangedMaterialPatchV060(material)) return null;
+    const range = rangeFromPatchV060(record);
+    if(!range) return null;
+    const nextStep = nextReviewStepForRecordPatchV060(record, completedTask);
+    if(nextStep == null || nextStep < 0 || nextStep >= REVIEW_OFFSETS_PATCH_V060.length) return null;
+    const dueDate = addDays(record.date || today(), REVIEW_OFFSETS_PATCH_V060[nextStep]);
+    if(!isNoDeadlineMaterialPatchV060(material) && dueDate > material.deadline) return null;
+    const overlapping = pendingReviewTasksForMaterialPatchV060(record.materialId)
+      .filter(task => (!completedTask || task.id !== completedTask.id) && rangesOverlapPatchV060(rangeFromPatchV060(task), range))
+      .sort(taskSortPatchV060);
+    if(overlapping.length){
+      const keep = overlapping[0];
+      keep.start = range.start;
+      keep.end = range.end;
+      keep.dueDate = dueDate;
+      keep.createdForDate = dueDate;
+      keep.sourceRecordId = record.id;
+      keep.weak = record.weak || keep.weak || "ok";
+      keep.plannedMinutes = null;
+      keep.reviewStep = nextStep;
+      keep.reviewChainPatch = REVIEW_PATCH_MARK_V060;
+      const removeIds = new Set(overlapping.slice(1).map(t => t.id));
+      if(removeIds.size) state.tasks = (state.tasks || []).filter(t => !removeIds.has(t.id));
+      return keep;
+    }
+    const task = {
+      id:id("task"),
+      type:"review",
+      materialId:record.materialId,
+      start:range.start,
+      end:range.end,
+      dueDate,
+      createdForDate:dueDate,
+      sourceRecordId:record.id,
+      weak:record.weak || "ok",
+      plannedMinutes:null,
+      done:false,
+      reviewStep:nextStep,
+      reviewChainPatch:REVIEW_PATCH_MARK_V060,
+      createdAt:new Date().toISOString()
+    };
+    state.tasks.push(task);
+    return task;
+  }
+  function cleanupGeneratedTasksPatchV060(){
+    const removedReviews = cleanupPendingReviewChainsPatchV060();
+    const removedNew = cleanupPendingNewTasksPatchV060();
+    return removedReviews + removedNew;
+  }
+
+  makeReviewTasks = function(record){
+    if(!record || (record.type !== "new" && record.type !== "review")) return;
+    const completedTask = record.taskId ? (state.tasks || []).find(t => t.id === record.taskId) : null;
+    upsertNextReviewTaskPatchV060(record, completedTask);
+    cleanupPendingReviewChainsPatchV060();
+  };
+
+  buildTodayPlan = function(force=false){
+    const date = today();
+    if(force){
+      state.tasks = (state.tasks || []).filter(t => !(t.type === "new" && t.createdForDate === date && !t.done && t.generated));
+    }
+    cleanupGeneratedTasksPatchV060();
+    const hasTodayGeneratedNewTask = (state.tasks || []).some(t => t.type === "new" && t.createdForDate === date && t.generated && isScheduledMaterialPatchV060(mat(t.materialId)));
+    const suppressAutoFill = Boolean(globalThis.__suppressTodayPlanAutoFillV070);
+    if(!force && (suppressAutoFill || hasTodayGeneratedNewTask)){
+      save();
+      return;
+    }
+    const mode = modeForToday();
+    if(mode === "rest"){ save(); return; }
+    const dueUndone = (state.tasks || []).filter(t => !t.done && t.dueDate <= date && isScheduledMaterialPatchV060(mat(t.materialId)));
+    let cap = Math.max(0, todayCapacity() - dueUndone.reduce((sum,t)=>sum+taskEstimate(t),0));
+    const materials = (state.materials || [])
+      .filter(m => canPlanRangedMaterialPatchV060(m) && isStartedMaterialPatchV060(m, date))
+      .filter(m => pendingNewTasksForMaterialPatchV060(m.id).length < MAX_PENDING_NEW_PER_MATERIAL_PATCH_V060)
+      .map(m => ({m, e:estimate(m)}))
+      .filter(x => x.e.remaining > 0)
+      .sort((a,b)=>{
+        const ad = isNoDeadlineMaterialPatchV060(a.m), bd = isNoDeadlineMaterialPatchV060(b.m);
+        if(ad !== bd) return ad ? 1 : -1;
+        const urgent = daysInc(date, effectiveDeadlinePatchV060(a.m, date)) - daysInc(date, effectiveDeadlinePatchV060(b.m, date));
+        if(urgent !== 0) return urgent;
+        return (priorityMul[b.m.priority] || 1) - (priorityMul[a.m.priority] || 1);
+      });
+    for(const {m,e} of materials){
+      if(cap <= 0) break;
+      if(pendingNewTasksForMaterialPatchV060(m.id).length >= MAX_PENDING_NEW_PER_MATERIAL_PATCH_V060) continue;
+      const remain = availableNewRangesPatchV060(m.id);
+      if(!remain.length) continue;
+      const planDays = Math.max(1, e.planDays || e.days || 1);
+      const requiredUnits = Math.max(1, Math.ceil((e.remaining / planDays) * (priorityMul[m.priority] || 1)));
+      const capUnits = Math.max(1, Math.floor(cap / Math.max(1, e.predicted)));
+      const units = Math.min(requiredUnits, capUnits, rangeLenPatchV060(remain[0]));
+      if(units <= 0) continue;
+      const start = remain[0].start;
+      const end = start + units - 1;
+      const minutes = Math.ceil(units * e.predicted);
+      state.tasks.push({
+        id:id("task"),
+        type:"new",
+        materialId:m.id,
+        start,
+        end,
+        dueDate:date,
+        createdForDate:date,
+        generated:true,
+        weak:"ok",
+        plannedMinutes:minutes,
+        done:false,
+        createdAt:new Date().toISOString()
+      });
+      cap -= minutes;
+      cleanupPendingNewTasksPatchV060();
+    }
+    cleanupGeneratedTasksPatchV060();
+    save();
+  };
+
+  quickDone = function(taskId){
+    const task = (state.tasks || []).find(t => t.id === taskId);
+    if(!task) return;
+    const material = mat(task.materialId);
+    if(!material) return;
+    const record = {
+      id:id("rec"),
+      materialId:task.materialId,
+      type:task.type,
+      date:today(),
+      start:task.start,
+      end:task.end,
+      minutes:taskEstimate(task),
+      difficulty:Number(material.defaultDifficulty || 3),
+      focus:3,
+      weak:task.weak || "ok",
+      memo:"タスクからそのまま完了",
+      taskId:task.id,
+      createdAt:new Date().toISOString()
+    };
+    if(task.type === "new"){
+      const overlap = intersectAny({start:record.start,end:record.end}, completedRanges(record.materialId));
+      if(overlap.length && !confirm("この範囲はすでに一部記録済みです。それでも完了にしますか？")) return;
+    }
+    state.records.push(record);
+    task.done = true;
+    task.doneAt = new Date().toISOString();
+    task.recordId = record.id;
+    if(task.type === "new" || task.type === "review") upsertNextReviewTaskPatchV060(record, task);
+    cleanupGeneratedTasksPatchV060();
+    save();
+    render();
+    toast("完了にしました");
+  };
+
+  function recordKindLabelPatchV060(record){
+    const material = mat(record.materialId);
+    if(isOptionalMaterialPatchV060(material)) return "プラスα";
+    return record.type === "review" ? "復習" : "新規";
+  }
+  function bindRecordFormPatchV060(){
+    const recordForm = document.getElementById("recordForm");
+    if(!recordForm) return;
+    recordForm.onsubmit = e => {
+      e.preventDefault();
+      const taskId = document.getElementById("recordTaskId").value;
+      const materialId = document.getElementById("recMaterial").value;
+      const material = mat(materialId);
+      if(!material){ alert("教材を選んでください。"); return; }
+      const noRange = isNoRangeMaterialPatchV060(material);
+      const record = {
+        id:id("rec"),
+        materialId,
+        type:document.getElementById("recType").value,
+        date:document.getElementById("recDate").value || today(),
+        start:null,
+        end:null,
+        minutes:Number(document.getElementById("recMinutes").value),
+        difficulty:Number(document.getElementById("recDiff").value),
+        focus:Number(document.getElementById("recFocus").value),
+        weak:document.getElementById("recWeak").value,
+        memo:document.getElementById("recMemo").value.trim(),
+        private:Boolean(document.getElementById("recPrivate")?.checked),
+        taskId:taskId || null,
+        createdAt:new Date().toISOString()
+      };
+      if(record.minutes <= 0){ alert("時間を入れてください。"); return; }
+      if(noRange){
+        record.type = "new";
+      } else {
+        const startVal = document.getElementById("recStart").value;
+        const endVal = document.getElementById("recEnd").value;
+        if(startVal === "" || endVal === ""){ alert("範囲開始と範囲終了を入れてください。"); return; }
+        record.start = Number(startVal);
+        record.end = Number(endVal);
+        if(record.start > record.end) [record.start,record.end] = [record.end,record.start];
+        const inTarget = intersectAny({start:record.start,end:record.end}, material.ranges || []);
+        if(!inTarget.length && !confirm("この範囲は教材の対象範囲外です。それでも記録しますか？")) return;
+        if(record.type === "new"){
+          const overlap = intersectAny({start:record.start,end:record.end}, completedRanges(record.materialId));
+          if(overlap.length){
+            const txt = overlap.map(r => rangeText(material,r.start,r.end)).join(", ");
+            if(!confirm(`すでに記録済みの範囲と重なっています：${txt}\nそれでも記録しますか？`)) return;
+          }
+        }
+      }
+      const task = taskId ? (state.tasks || []).find(t => t.id === taskId) : null;
+      state.records.push(record);
+      if(task){
+        task.done = true;
+        task.doneAt = new Date().toISOString();
+        task.recordId = record.id;
+      }
+      const autoReview = Boolean(document.getElementById("recAutoReview")?.checked);
+      const shouldScheduleReview = !noRange && ((record.type === "new" && autoReview) || record.type === "review");
+      if(shouldScheduleReview) upsertNextReviewTaskPatchV060(record, task);
+      cleanupGeneratedTasksPatchV060();
+      save();
+      document.getElementById("recordForm").reset();
+      document.getElementById("recordTitle").textContent = "学習を記録";
+      document.getElementById("recordTaskId").value = "";
+      document.getElementById("recDate").value = today();
+      document.getElementById("recDiff").value = 3;
+      document.getElementById("recFocus").value = 3;
+      document.getElementById("recWeak").value = "ok";
+      document.getElementById("recAutoReview").checked = true;
+      const privateInput = document.getElementById("recPrivate");
+      if(privateInput) privateInput.checked = false;
+      resetStopwatch();
+      render();
+      toast("記録しました");
+    };
+  }
+
+  function renderWithoutTodayPlanAutoFillPatchV070(){
+    globalThis.__suppressTodayPlanAutoFillV070 = true;
+    try{
+      render();
+    } finally {
+      globalThis.__suppressTodayPlanAutoFillV070 = false;
+    }
+  }
+
+  function bindTodayPlanRecalculatePatchV070(){
+    const regenBtn = document.getElementById("regenPlan");
+    if(regenBtn){
+      regenBtn.textContent = "今日の計画を再計算";
+      regenBtn.onclick = () => {
+        if(!confirm("今日の未完了・自動生成の新規学習タスクを、現在の進捗に合わせて再計算します。完了済みタスク、記録、復習タスク、持ち越しタスクは残ります。")) return;
+        buildTodayPlan(true);
+        render();
+        toast("今日の計画を再計算しました");
+      };
+    }
+
+    const modeForm = document.getElementById("modeForm");
+    if(modeForm){
+      modeForm.onsubmit = e => {
+        e.preventDefault();
+        state.settings.todayModes[today()] = document.getElementById("todayMode").value;
+        save();
+        renderWithoutTodayPlanAutoFillPatchV070();
+        toast("今日のモードを保存しました。必要なら「今日の計画を再計算」を押してください");
+      };
+    }
+
+    const capacityForm = document.getElementById("capacityForm");
+    if(capacityForm){
+      capacityForm.onsubmit = e => {
+        e.preventDefault();
+        for(let i=0;i<7;i++) state.settings.capacities[i] = Number(document.getElementById("cap"+i).value || 0);
+        save();
+        renderWithoutTodayPlanAutoFillPatchV070();
+        toast("曜日別時間を保存しました。必要なら「今日の計画を再計算」を押してください");
+      };
+    }
+
+    const boundaryForm = document.getElementById("boundaryForm");
+    if(boundaryForm){
+      boundaryForm.onsubmit = e => {
+        e.preventDefault();
+        state.settings.dayBoundaryHour = Number(document.getElementById("dayBoundaryHour").value);
+        document.getElementById("recDate").value = today();
+        save();
+        renderWithoutTodayPlanAutoFillPatchV070();
+        toast("日付変更時刻を保存しました。必要なら「今日の計画を再計算」を押してください");
+      };
+    }
+
+    const notice = document.getElementById("todayNotice");
+    if(notice) notice.innerHTML = notice.innerHTML.replaceAll("今日の計画を作り直す", "今日の計画を再計算");
+  }
+
+  const oldRenderTodayPatchV060 = renderToday;
+  renderToday = function(){
+    const removed = cleanupGeneratedTasksPatchV060();
+    if(removed) save();
+    const result = oldRenderTodayPatchV060.apply(this, arguments);
+    bindTodayPlanRecalculatePatchV070();
+    return result;
+  };
+
+  const oldRenderTasksPatchV060 = renderTasks;
+  renderTasks = function(){
+    const removed = cleanupGeneratedTasksPatchV060();
+    if(removed) save();
+    return oldRenderTasksPatchV060.apply(this, arguments);
+  };
+
+  const oldRenderPatchV060 = render;
+  render = function(){
+    const removed = cleanupGeneratedTasksPatchV060();
+    const result = oldRenderPatchV060.apply(this, arguments);
+    bindRecordFormPatchV060();
+    bindTodayPlanRecalculatePatchV070();
+    if(removed) save();
+    return result;
+  };
+
+  const oldRecordItemPatchV060 = recordItem;
+  recordItem = function(record){
+    const item = oldRecordItemPatchV060.apply(this, arguments);
+    const line = item?.querySelector?.(".item-head .small");
+    if(line){
+      const parts = line.textContent.split(" / ");
+      if(parts.length >= 3){
+        parts[1] = recordKindLabelPatchV060(record);
+        line.textContent = parts.join(" / ");
+      }
+    }
+    return item;
+  };
+
+  cleanupGeneratedTasksPatchV060();
+  bindRecordFormPatchV060();
+  try{ render(); }catch(e){ console.error("v0.6.0 review task generation patch failed", e); }
 })();
 </script>
 
