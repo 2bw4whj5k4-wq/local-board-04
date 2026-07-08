@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>学習負荷プランナー v0.7.0</title>
+  <title>学習負荷プランナー v0.7.1</title>
   <style>
     :root {
       --bg: #f7f3ee;
@@ -591,7 +591,7 @@
   <header>
     <div class="head">
       <div>
-        <h1>学習負荷プランナー v0.7.0</h1>
+        <h1>学習負荷プランナー v0.7.1</h1>
         <p class="sub">学習計画、記録、共有をまとめて管理できます。</p>
       </div>
       <div class="actions">
@@ -1054,6 +1054,7 @@ let cloudSaveTimer = null;
 let isApplyingCloudData = false;
 let lastCloudSavedAt = null;
 let lastCloudLoadedAt = null;
+const LOCAL_SYNC_FINGERPRINT_KEY = KEY+"-last-synced-fingerprint";
 let hasLocalUnsyncedChanges = localStorage.getItem(KEY+"-unsynced") === "1";
 let lastLoggedOutSaveWarning = 0;
 
@@ -1100,6 +1101,10 @@ function saveLocalOnly(){
 
 function markUnsynced(message=true){
   if(!hasMeaningfulData(state)) return;
+  if(isSameAsRememberedSyncedData(state)){
+    clearUnsynced();
+    return;
+  }
   hasLocalUnsyncedChanges = true;
   localStorage.setItem(KEY+"-unsynced", "1");
   updateAuthUI("ログアウト中の変更があります。ログイン後に端末データをクラウドへ保存するか選べます。", "warn");
@@ -1115,6 +1120,7 @@ function markUnsynced(message=true){
 function clearUnsynced(){
   hasLocalUnsyncedChanges = false;
   localStorage.removeItem(KEY+"-unsynced");
+  rememberSyncedDataFingerprint(state);
 }
 
 function save(){
@@ -1128,6 +1134,77 @@ function save(){
 
 function hasMeaningfulData(data=state){
   return Boolean((data.materials&&data.materials.length) || (data.records&&data.records.length) || (data.tasks&&data.tasks.length));
+}
+
+function sortForSyncCompare(value){
+  if(Array.isArray(value)) return value.map(sortForSyncCompare);
+  if(value && typeof value === "object"){
+    const out = {};
+    Object.keys(value).sort().forEach(key=>{
+      if(key === "_cloudUpdatedAt") return;
+      out[key] = sortForSyncCompare(value[key]);
+    });
+    return out;
+  }
+  return value;
+}
+
+function comparableStateForSync(data){
+  const normalized = normalizeStateData(data || {});
+  delete normalized._cloudUpdatedAt;
+  delete normalized.createdAt;
+  return sortForSyncCompare(normalized);
+}
+
+function syncFingerprint(data){
+  try{
+    return JSON.stringify(comparableStateForSync(data));
+  }catch(e){
+    return "";
+  }
+}
+
+function rememberSyncedDataFingerprint(data=state){
+  const fingerprint = syncFingerprint(data);
+  if(fingerprint) localStorage.setItem(LOCAL_SYNC_FINGERPRINT_KEY, fingerprint);
+}
+
+function isSameAsRememberedSyncedData(data=state){
+  const remembered = localStorage.getItem(LOCAL_SYNC_FINGERPRINT_KEY) || "";
+  return Boolean(remembered && remembered === syncFingerprint(data));
+}
+
+function parseSyncTime(value){
+  const ms = Date.parse(value || "");
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function assessLocalCloudSync(row){
+  const localHasData = hasMeaningfulData(state);
+  const cloudHasData = Boolean(row && row.data && hasMeaningfulData(row.data));
+  if(!localHasData) return { status:"no-local-data" };
+  if(!cloudHasData) return { status:"no-cloud-data" };
+
+  const localFingerprint = syncFingerprint(state);
+  const cloudFingerprint = syncFingerprint(row.data);
+  if(localFingerprint && localFingerprint === cloudFingerprint) return { status:"same" };
+
+  const localCloudUpdatedAt = state?._cloudUpdatedAt || "";
+  const cloudUpdatedAt = row?.updated_at || "";
+  const localTime = parseSyncTime(localCloudUpdatedAt);
+  const cloudTime = parseSyncTime(cloudUpdatedAt);
+
+  if(localTime != null && cloudTime != null){
+    if(localCloudUpdatedAt === cloudUpdatedAt || localTime === cloudTime){
+      return hasLocalUnsyncedChanges ? { status:"local-newer" } : { status:"different" };
+    }
+    if(localTime > cloudTime) return { status:"local-newer" };
+    if(cloudTime > localTime) return hasLocalUnsyncedChanges ? { status:"different" } : { status:"cloud-newer" };
+  }
+
+  const remembered = localStorage.getItem(LOCAL_SYNC_FINGERPRINT_KEY) || "";
+  if(remembered && remembered === cloudFingerprint && hasLocalUnsyncedChanges) return { status:"local-newer" };
+  return { status:"different" };
 }
 
 function normalizeStateData(data){
@@ -2185,8 +2262,25 @@ async function autoLoadOrCreateCloudData(){
     updateAuthUI("ログインしました。クラウドデータを確認中...", "good");
     const row = await fetchCloudRow();
     if(row && row.data && hasMeaningfulData(row.data)){
-      if(hasLocalUnsyncedChanges && hasMeaningfulData(state)){
-        const useLocal = confirm("この端末にログアウト中の未同期データがあります。\n\nOK：この端末のデータをクラウドへ保存する\nキャンセル：クラウドのデータを読み込む");
+      const syncStatus = assessLocalCloudSync(row);
+      if(syncStatus.status === "same"){
+        state._cloudUpdatedAt = row.updated_at;
+        lastCloudLoadedAt = new Date().toLocaleString("ja-JP", {hour12:false});
+        clearUnsynced();
+        saveLocalOnly();
+        updateAuthUI("端末データとクラウドデータは同期済みです。", "good");
+        return;
+      }
+      if(syncStatus.status === "local-newer"){
+        const useLocal = confirm("この端末にクラウドへ保存していない可能性のあるデータがあります。\n\nOK：この端末のデータをクラウドへ保存する\nキャンセル：クラウドのデータを読み込む");
+        if(useLocal){
+          await saveCloudData(true);
+          clearUnsynced();
+          updateAuthUI("端末データをクラウドへ保存しました。", "good");
+          return;
+        }
+      } else if(syncStatus.status === "different"){
+        const useLocal = confirm("端末データとクラウドデータが異なります。どちらが新しいか自動判定できません。\n\nOK：この端末のデータをクラウドへ保存する\nキャンセル：クラウドのデータを読み込む");
         if(useLocal){
           await saveCloudData(true);
           clearUnsynced();
@@ -2203,7 +2297,7 @@ async function autoLoadOrCreateCloudData(){
       saveLocalOnly();
       isApplyingCloudData = false;
       render();
-      updateAuthUI("クラウドから読み込みました。同期準備完了です。", "good");
+      updateAuthUI(syncStatus.status === "cloud-newer" ? "クラウドデータを読み込みました。" : "クラウドから読み込みました。同期準備完了です。", "good");
       toast("クラウドから読み込みました");
     } else {
       await saveCloudData(true);
@@ -3150,9 +3244,9 @@ initCloud();
   }
 
   function ensureV056Dom(){
-    document.title = "学習負荷プランナー v0.7.0";
+    document.title = "学習負荷プランナー v0.7.1";
     const h1 = document.querySelector("h1");
-    if(h1) h1.textContent = "学習負荷プランナー v0.7.0";
+    if(h1) h1.textContent = "学習負荷プランナー v0.7.1";
     const sub = document.querySelector("header .sub");
     if(sub) sub.textContent = "分析グラフ修正、プラスα記録の種類非表示、範囲なし教材の入力整理に対応。";
 
@@ -3974,8 +4068,8 @@ initCloud();
   }
 
   function ensureV057Dom(){
-    document.title = "学習負荷プランナー v0.7.0";
-    const h1=document.querySelector("h1"); if(h1) h1.textContent="学習負荷プランナー v0.7.0";
+    document.title = "学習負荷プランナー v0.7.1";
+    const h1=document.querySelector("h1"); if(h1) h1.textContent="学習負荷プランナー v0.7.1";
     const sub=document.querySelector("header .sub"); if(sub) sub.textContent="分析グラフ修正、プラスα記録の種類非表示、範囲なし教材の入力整理に対応。";
 
     const recType=document.getElementById("recType");
@@ -4194,7 +4288,7 @@ initCloud();
 
 /* v0.5.9 patch: save-status visibility and diagnostic copy, no data schema change */
 (function(){
-  const APP_VERSION_059 = "0.5.9";
+  const APP_VERSION_059 = "0.7.1";
   const LOCAL_LAST_SAVE_KEY_059 = KEY + "-last-local-saved-at";
   let lastDiagnosticErrorV059 = "";
 
@@ -4311,9 +4405,9 @@ initCloud();
 
   function ensureV059Dom(){
     ensureV059Styles();
-    document.title = "学習負荷プランナー v0.7.0";
+    document.title = "学習負荷プランナー v0.7.1";
     const h1 = document.querySelector("h1");
-    if(h1) h1.textContent = "学習負荷プランナー v0.7.0";
+    if(h1) h1.textContent = "学習負荷プランナー v0.7.1";
     const sub = document.querySelector("header .sub");
     if(sub) sub.textContent = "学習計画、記録、共有をまとめて管理できます。";
 
@@ -4827,9 +4921,9 @@ initCloud();
 
   function ensureV060Dom(){
     ensureV060Styles();
-    document.title = "学習負荷プランナー v0.7.0";
+    document.title = "学習負荷プランナー v0.7.1";
     const h1 = document.querySelector("h1");
-    if(h1) h1.textContent = "学習負荷プランナー v0.7.0";
+    if(h1) h1.textContent = "学習負荷プランナー v0.7.1";
     const sub = document.querySelector("header .sub");
     if(sub) sub.textContent = "学習計画、記録、共有をまとめて管理できます。";
 
@@ -4932,15 +5026,12 @@ initCloud();
             <div class="item"><div class="title">閲覧専用共有の土台を追加</div><div class="small">共有ONのユーザーが作った共有用スナップショットだけを、追加した相手が見られるようにしました。</div></div>
             <div class="item"><div class="title">メイン保存データは直接共有しない</div><div class="small">study_planner_dataは本人用のまま維持し、相手には教材名・日付・記録時間・合計時間だけを渡します。</div></div>
             <div class="item"><div class="title">記録ごとの非公開に対応</div><div class="small">記録時に「この記録は共有しない」を選べます。既存記録は初期状態では共有対象です。</div></div>
-            <div class="item"><div class="title">復習タスクの作り方を調整</div><div class="small">新規学習時に先の復習をまとめて作らず、次の1回分だけ作るようにしました。復習を完了したら、実際に復習した日を基準に次の復習を作ります。</div></div>
-            <div class="item"><div class="title">今日のタスクの重複を整理</div><div class="small">同じ教材・重なる範囲の未完了復習が複数ある場合は、今日の表示前に1件へまとめます。新規学習タスクも同じ教材では最大2件までに抑えます。</div></div>
-            <div class="item"><div class="title">プラスα記録と共有表示を調整</div><div class="small">範囲なしのプラスα教材では範囲入力を求めず、最近の記録や共有タブでもプラスαとして分かるようにしました。</div></div>
           </div>
         </div>`);
     }
     if(updates){
       const topNotice = updates.querySelector(".notice.good");
-      if(topNotice) topNotice.innerHTML = "v0.7.0では、保存データやタスク生成の仕組みは変えず、見た目だけを実用的な学習管理アプリ風に整えました。本番反映前に必ずバックアップを書き出してください。";
+      if(topNotice) topNotice.innerHTML = "v0.7.1では、更新履歴の並び順とバージョン管理ルールを整理しました。保存データやタスク生成の仕組みは変更していません。";
       const dataMemo = [...updates.querySelectorAll(".card")].find(c=>c.querySelector("h2")?.textContent.trim()==="データ保護メモ");
       const memoNotice = dataMemo?.querySelector(".notice");
       if(memoNotice) memoNotice.innerHTML = "共有機能ではSupabaseに新しい3テーブルを追加します。既存のstudy_planner_dataと保存JSON本体は維持しますが、記録には非公開フラグが追加される場合があります。";
@@ -6200,6 +6291,117 @@ initCloud();
   cleanupGeneratedTasksPatchV060();
   bindRecordFormPatchV060();
   try{ render(); }catch(e){ console.error("v0.6.0 review task generation patch failed", e); }
+})();
+</script>
+
+<script>
+/* v0.7.1 changelog order and version label patch */
+(function(){
+  const APP_DISPLAY_VERSION_071 = "v0.7.1";
+  const CHANGELOG_META_071 = {
+    "0.7.1": "更新日：2026-07-08 / 種別：内部修正・表示修正",
+    "0.7.0": "更新日：2026-07-05 / 種別：UI改善",
+    "0.6.0": "更新日：2026-06-19 / 種別：仕様変更",
+    "0.5.9": "更新日：2026-06-19 / 種別：内部修正",
+    "0.5.8": "更新日：2026-06-19 / 種別：バグ修正・UI改善",
+    "0.5.6": "更新日：2026-06-19 / 種別：仕様変更・UI改善",
+    "0.5.5": "更新日：2026-06-19 / 種別：内部修正",
+    "0.5.4": "更新日：2026-06-19 / 種別：UI改善",
+    "0.5.3": "更新日：2026-06-19 / 種別：仕様変更・分析改善"
+  };
+
+  function applyVersionLabelV071(){
+    document.title = `学習負荷プランナー ${APP_DISPLAY_VERSION_071}`;
+    const h1 = document.querySelector("h1");
+    if(h1) h1.textContent = `学習負荷プランナー ${APP_DISPLAY_VERSION_071}`;
+  }
+
+  function parseVersionPartsV071(text){
+    const match = String(text || "").match(/v?(\d+)\.(\d+)\.(\d+)/i);
+    if(!match) return null;
+    return match.slice(1, 4).map(n => Number(n));
+  }
+
+  function compareVersionsV071(a, b){
+    for(let i = 0; i < 3; i++){
+      const diff = (a[i] || 0) - (b[i] || 0);
+      if(diff) return diff;
+    }
+    return 0;
+  }
+
+  function versionKeyV071(parts){
+    return parts ? parts.join(".") : "";
+  }
+
+  function versionPartsFromCardV071(card){
+    return parseVersionPartsV071(card?.querySelector?.("h2")?.textContent);
+  }
+
+  function ensureCardMetaV071(card){
+    const parts = versionPartsFromCardV071(card);
+    const key = versionKeyV071(parts);
+    if(!key) return;
+    card.dataset.version = key;
+    const text = CHANGELOG_META_071[key];
+    if(!text) return;
+    const h2 = card.querySelector("h2");
+    let meta = Array.from(card.children).find(el => el.classList?.contains("update-meta"));
+    if(!meta){
+      meta = document.createElement("p");
+      meta.className = "small update-meta";
+      h2?.insertAdjacentElement("afterend", meta);
+    }
+    meta.textContent = text;
+  }
+
+  function sortUpdateCardsV071(updates){
+    const items = Array.from(updates.children).map((el, index) => ({
+      el,
+      index,
+      version: versionPartsFromCardV071(el)
+    }));
+    const versionCards = items
+      .filter(item => item.el.classList?.contains("card") && item.version)
+      .sort((a, b) => compareVersionsV071(b.version, a.version) || a.index - b.index);
+    const otherCards = items.filter(item => !item.version);
+    versionCards.forEach(item => updates.appendChild(item.el));
+    otherCards.forEach(item => updates.appendChild(item.el));
+  }
+
+  function ensureChangelogV071(){
+    applyVersionLabelV071();
+    const updates = document.querySelector("#updates .grid");
+    if(!updates) return;
+
+    if(!document.getElementById("updateV071Card")){
+      updates.insertAdjacentHTML("afterbegin", `
+        <div class="card span-12" id="updateV071Card">
+          <h2>v0.7.1</h2>
+          <p class="small update-meta">更新日：2026-07-08 / 種別：内部修正・表示修正</p>
+          <div class="list">
+            <div class="item"><div class="title">更新履歴の並び順を修正</div><div class="small">更新履歴タブで、新しいバージョンが一番上に表示されるようにしました。</div></div>
+            <div class="item"><div class="title">バージョン番号を数値で比較</div><div class="small">文字列順ではなく、major / minor / patch の数値として比較します。v0.10.0 は v0.9.9 より新しく扱います。</div></div>
+            <div class="item"><div class="title">今後の更新ルールを明確化</div><div class="small">小さな修正でもバージョン番号を変更し、PRごとに画面上のバージョン表記と更新履歴を更新する運用にしました。</div></div>
+          </div>
+        </div>`);
+    }
+
+    const topNotice = updates.querySelector(".notice.good");
+    if(topNotice) topNotice.innerHTML = "今後は小さな修正でもバージョン番号を更新し、更新履歴タブへ内容を残します。新しいバージョンほど上に表示します。";
+
+    Array.from(updates.querySelectorAll(".card")).forEach(ensureCardMetaV071);
+    sortUpdateCardsV071(updates);
+  }
+
+  const oldRenderV071 = render;
+  render = function(){
+    const result = oldRenderV071.apply(this, arguments);
+    ensureChangelogV071();
+    return result;
+  };
+
+  ensureChangelogV071();
 })();
 </script>
 
