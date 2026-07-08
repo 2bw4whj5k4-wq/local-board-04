@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>学習負荷プランナー v0.7.0</title>
+  <title>学習負荷プランナー v0.7.1</title>
   <style>
     :root {
       --bg: #f7f3ee;
@@ -591,7 +591,7 @@
   <header>
     <div class="head">
       <div>
-        <h1>学習負荷プランナー v0.7.0</h1>
+        <h1>学習負荷プランナー v0.7.1</h1>
         <p class="sub">学習計画、記録、共有をまとめて管理できます。</p>
       </div>
       <div class="actions">
@@ -3244,9 +3244,9 @@ initCloud();
   }
 
   function ensureV056Dom(){
-    document.title = "学習負荷プランナー v0.7.0";
+    document.title = "学習負荷プランナー v0.7.1";
     const h1 = document.querySelector("h1");
-    if(h1) h1.textContent = "学習負荷プランナー v0.7.0";
+    if(h1) h1.textContent = "学習負荷プランナー v0.7.1";
     const sub = document.querySelector("header .sub");
     if(sub) sub.textContent = "分析グラフ修正、プラスα記録の種類非表示、範囲なし教材の入力整理に対応。";
 
@@ -4068,8 +4068,8 @@ initCloud();
   }
 
   function ensureV057Dom(){
-    document.title = "学習負荷プランナー v0.7.0";
-    const h1=document.querySelector("h1"); if(h1) h1.textContent="学習負荷プランナー v0.7.0";
+    document.title = "学習負荷プランナー v0.7.1";
+    const h1=document.querySelector("h1"); if(h1) h1.textContent="学習負荷プランナー v0.7.1";
     const sub=document.querySelector("header .sub"); if(sub) sub.textContent="分析グラフ修正、プラスα記録の種類非表示、範囲なし教材の入力整理に対応。";
 
     const recType=document.getElementById("recType");
@@ -4288,7 +4288,7 @@ initCloud();
 
 /* v0.5.9 patch: save-status visibility and diagnostic copy, no data schema change */
 (function(){
-  const APP_VERSION_059 = "0.5.9";
+  const APP_VERSION_059 = "0.7.1";
   const LOCAL_LAST_SAVE_KEY_059 = KEY + "-last-local-saved-at";
   let lastDiagnosticErrorV059 = "";
 
@@ -4405,9 +4405,9 @@ initCloud();
 
   function ensureV059Dom(){
     ensureV059Styles();
-    document.title = "学習負荷プランナー v0.7.0";
+    document.title = "学習負荷プランナー v0.7.1";
     const h1 = document.querySelector("h1");
-    if(h1) h1.textContent = "学習負荷プランナー v0.7.0";
+    if(h1) h1.textContent = "学習負荷プランナー v0.7.1";
     const sub = document.querySelector("header .sub");
     if(sub) sub.textContent = "学習計画、記録、共有をまとめて管理できます。";
 
@@ -4921,9 +4921,9 @@ initCloud();
 
   function ensureV060Dom(){
     ensureV060Styles();
-    document.title = "学習負荷プランナー v0.7.0";
+    document.title = "学習負荷プランナー v0.7.1";
     const h1 = document.querySelector("h1");
-    if(h1) h1.textContent = "学習負荷プランナー v0.7.0";
+    if(h1) h1.textContent = "学習負荷プランナー v0.7.1";
     const sub = document.querySelector("header .sub");
     if(sub) sub.textContent = "学習計画、記録、共有をまとめて管理できます。";
 
@@ -5031,7 +5031,7 @@ initCloud();
     }
     if(updates){
       const topNotice = updates.querySelector(".notice.good");
-      if(topNotice) topNotice.innerHTML = "v0.7.0では、保存データやタスク生成の仕組みは変えず、見た目だけを実用的な学習管理アプリ風に整えました。本番反映前に必ずバックアップを書き出してください。";
+      if(topNotice) topNotice.innerHTML = "v0.7.1では、更新履歴の並び順とバージョン管理ルールを整理しました。保存データやタスク生成の仕組みは変更していません。";
       const dataMemo = [...updates.querySelectorAll(".card")].find(c=>c.querySelector("h2")?.textContent.trim()==="データ保護メモ");
       const memoNotice = dataMemo?.querySelector(".notice");
       if(memoNotice) memoNotice.innerHTML = "共有機能ではSupabaseに新しい3テーブルを追加します。既存のstudy_planner_dataと保存JSON本体は維持しますが、記録には非公開フラグが追加される場合があります。";
@@ -6291,6 +6291,117 @@ initCloud();
   cleanupGeneratedTasksPatchV060();
   bindRecordFormPatchV060();
   try{ render(); }catch(e){ console.error("v0.6.0 review task generation patch failed", e); }
+})();
+</script>
+
+<script>
+/* v0.7.1 changelog order and version label patch */
+(function(){
+  const APP_DISPLAY_VERSION_071 = "v0.7.1";
+  const CHANGELOG_META_071 = {
+    "0.7.1": "更新日：2026-07-08 / 種別：内部修正・表示修正",
+    "0.7.0": "更新日：2026-07-05 / 種別：UI改善",
+    "0.6.0": "更新日：2026-06-19 / 種別：仕様変更",
+    "0.5.9": "更新日：2026-06-19 / 種別：内部修正",
+    "0.5.8": "更新日：2026-06-19 / 種別：バグ修正・UI改善",
+    "0.5.6": "更新日：2026-06-19 / 種別：仕様変更・UI改善",
+    "0.5.5": "更新日：2026-06-19 / 種別：内部修正",
+    "0.5.4": "更新日：2026-06-19 / 種別：UI改善",
+    "0.5.3": "更新日：2026-06-19 / 種別：仕様変更・分析改善"
+  };
+
+  function applyVersionLabelV071(){
+    document.title = `学習負荷プランナー ${APP_DISPLAY_VERSION_071}`;
+    const h1 = document.querySelector("h1");
+    if(h1) h1.textContent = `学習負荷プランナー ${APP_DISPLAY_VERSION_071}`;
+  }
+
+  function parseVersionPartsV071(text){
+    const match = String(text || "").match(/v?(\d+)\.(\d+)\.(\d+)/i);
+    if(!match) return null;
+    return match.slice(1, 4).map(n => Number(n));
+  }
+
+  function compareVersionsV071(a, b){
+    for(let i = 0; i < 3; i++){
+      const diff = (a[i] || 0) - (b[i] || 0);
+      if(diff) return diff;
+    }
+    return 0;
+  }
+
+  function versionKeyV071(parts){
+    return parts ? parts.join(".") : "";
+  }
+
+  function versionPartsFromCardV071(card){
+    return parseVersionPartsV071(card?.querySelector?.("h2")?.textContent);
+  }
+
+  function ensureCardMetaV071(card){
+    const parts = versionPartsFromCardV071(card);
+    const key = versionKeyV071(parts);
+    if(!key) return;
+    card.dataset.version = key;
+    const text = CHANGELOG_META_071[key];
+    if(!text) return;
+    const h2 = card.querySelector("h2");
+    let meta = Array.from(card.children).find(el => el.classList?.contains("update-meta"));
+    if(!meta){
+      meta = document.createElement("p");
+      meta.className = "small update-meta";
+      h2?.insertAdjacentElement("afterend", meta);
+    }
+    meta.textContent = text;
+  }
+
+  function sortUpdateCardsV071(updates){
+    const items = Array.from(updates.children).map((el, index) => ({
+      el,
+      index,
+      version: versionPartsFromCardV071(el)
+    }));
+    const versionCards = items
+      .filter(item => item.el.classList?.contains("card") && item.version)
+      .sort((a, b) => compareVersionsV071(b.version, a.version) || a.index - b.index);
+    const otherCards = items.filter(item => !item.version);
+    versionCards.forEach(item => updates.appendChild(item.el));
+    otherCards.forEach(item => updates.appendChild(item.el));
+  }
+
+  function ensureChangelogV071(){
+    applyVersionLabelV071();
+    const updates = document.querySelector("#updates .grid");
+    if(!updates) return;
+
+    if(!document.getElementById("updateV071Card")){
+      updates.insertAdjacentHTML("afterbegin", `
+        <div class="card span-12" id="updateV071Card">
+          <h2>v0.7.1</h2>
+          <p class="small update-meta">更新日：2026-07-08 / 種別：内部修正・表示修正</p>
+          <div class="list">
+            <div class="item"><div class="title">更新履歴の並び順を修正</div><div class="small">更新履歴タブで、新しいバージョンが一番上に表示されるようにしました。</div></div>
+            <div class="item"><div class="title">バージョン番号を数値で比較</div><div class="small">文字列順ではなく、major / minor / patch の数値として比較します。v0.10.0 は v0.9.9 より新しく扱います。</div></div>
+            <div class="item"><div class="title">今後の更新ルールを明確化</div><div class="small">小さな修正でもバージョン番号を変更し、PRごとに画面上のバージョン表記と更新履歴を更新する運用にしました。</div></div>
+          </div>
+        </div>`);
+    }
+
+    const topNotice = updates.querySelector(".notice.good");
+    if(topNotice) topNotice.innerHTML = "今後は小さな修正でもバージョン番号を更新し、更新履歴タブへ内容を残します。新しいバージョンほど上に表示します。";
+
+    Array.from(updates.querySelectorAll(".card")).forEach(ensureCardMetaV071);
+    sortUpdateCardsV071(updates);
+  }
+
+  const oldRenderV071 = render;
+  render = function(){
+    const result = oldRenderV071.apply(this, arguments);
+    ensureChangelogV071();
+    return result;
+  };
+
+  ensureChangelogV071();
 })();
 </script>
 
