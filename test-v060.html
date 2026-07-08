@@ -1054,6 +1054,7 @@ let cloudSaveTimer = null;
 let isApplyingCloudData = false;
 let lastCloudSavedAt = null;
 let lastCloudLoadedAt = null;
+const LOCAL_SYNC_FINGERPRINT_KEY = KEY+"-last-synced-fingerprint";
 let hasLocalUnsyncedChanges = localStorage.getItem(KEY+"-unsynced") === "1";
 let lastLoggedOutSaveWarning = 0;
 
@@ -1100,6 +1101,10 @@ function saveLocalOnly(){
 
 function markUnsynced(message=true){
   if(!hasMeaningfulData(state)) return;
+  if(isSameAsRememberedSyncedData(state)){
+    clearUnsynced();
+    return;
+  }
   hasLocalUnsyncedChanges = true;
   localStorage.setItem(KEY+"-unsynced", "1");
   updateAuthUI("ログアウト中の変更があります。ログイン後に端末データをクラウドへ保存するか選べます。", "warn");
@@ -1115,6 +1120,7 @@ function markUnsynced(message=true){
 function clearUnsynced(){
   hasLocalUnsyncedChanges = false;
   localStorage.removeItem(KEY+"-unsynced");
+  rememberSyncedDataFingerprint(state);
 }
 
 function save(){
@@ -1128,6 +1134,77 @@ function save(){
 
 function hasMeaningfulData(data=state){
   return Boolean((data.materials&&data.materials.length) || (data.records&&data.records.length) || (data.tasks&&data.tasks.length));
+}
+
+function sortForSyncCompare(value){
+  if(Array.isArray(value)) return value.map(sortForSyncCompare);
+  if(value && typeof value === "object"){
+    const out = {};
+    Object.keys(value).sort().forEach(key=>{
+      if(key === "_cloudUpdatedAt") return;
+      out[key] = sortForSyncCompare(value[key]);
+    });
+    return out;
+  }
+  return value;
+}
+
+function comparableStateForSync(data){
+  const normalized = normalizeStateData(data || {});
+  delete normalized._cloudUpdatedAt;
+  delete normalized.createdAt;
+  return sortForSyncCompare(normalized);
+}
+
+function syncFingerprint(data){
+  try{
+    return JSON.stringify(comparableStateForSync(data));
+  }catch(e){
+    return "";
+  }
+}
+
+function rememberSyncedDataFingerprint(data=state){
+  const fingerprint = syncFingerprint(data);
+  if(fingerprint) localStorage.setItem(LOCAL_SYNC_FINGERPRINT_KEY, fingerprint);
+}
+
+function isSameAsRememberedSyncedData(data=state){
+  const remembered = localStorage.getItem(LOCAL_SYNC_FINGERPRINT_KEY) || "";
+  return Boolean(remembered && remembered === syncFingerprint(data));
+}
+
+function parseSyncTime(value){
+  const ms = Date.parse(value || "");
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function assessLocalCloudSync(row){
+  const localHasData = hasMeaningfulData(state);
+  const cloudHasData = Boolean(row && row.data && hasMeaningfulData(row.data));
+  if(!localHasData) return { status:"no-local-data" };
+  if(!cloudHasData) return { status:"no-cloud-data" };
+
+  const localFingerprint = syncFingerprint(state);
+  const cloudFingerprint = syncFingerprint(row.data);
+  if(localFingerprint && localFingerprint === cloudFingerprint) return { status:"same" };
+
+  const localCloudUpdatedAt = state?._cloudUpdatedAt || "";
+  const cloudUpdatedAt = row?.updated_at || "";
+  const localTime = parseSyncTime(localCloudUpdatedAt);
+  const cloudTime = parseSyncTime(cloudUpdatedAt);
+
+  if(localTime != null && cloudTime != null){
+    if(localCloudUpdatedAt === cloudUpdatedAt || localTime === cloudTime){
+      return hasLocalUnsyncedChanges ? { status:"local-newer" } : { status:"different" };
+    }
+    if(localTime > cloudTime) return { status:"local-newer" };
+    if(cloudTime > localTime) return hasLocalUnsyncedChanges ? { status:"different" } : { status:"cloud-newer" };
+  }
+
+  const remembered = localStorage.getItem(LOCAL_SYNC_FINGERPRINT_KEY) || "";
+  if(remembered && remembered === cloudFingerprint && hasLocalUnsyncedChanges) return { status:"local-newer" };
+  return { status:"different" };
 }
 
 function normalizeStateData(data){
@@ -2185,8 +2262,25 @@ async function autoLoadOrCreateCloudData(){
     updateAuthUI("ログインしました。クラウドデータを確認中...", "good");
     const row = await fetchCloudRow();
     if(row && row.data && hasMeaningfulData(row.data)){
-      if(hasLocalUnsyncedChanges && hasMeaningfulData(state)){
-        const useLocal = confirm("この端末にログアウト中の未同期データがあります。\n\nOK：この端末のデータをクラウドへ保存する\nキャンセル：クラウドのデータを読み込む");
+      const syncStatus = assessLocalCloudSync(row);
+      if(syncStatus.status === "same"){
+        state._cloudUpdatedAt = row.updated_at;
+        lastCloudLoadedAt = new Date().toLocaleString("ja-JP", {hour12:false});
+        clearUnsynced();
+        saveLocalOnly();
+        updateAuthUI("端末データとクラウドデータは同期済みです。", "good");
+        return;
+      }
+      if(syncStatus.status === "local-newer"){
+        const useLocal = confirm("この端末にクラウドへ保存していない可能性のあるデータがあります。\n\nOK：この端末のデータをクラウドへ保存する\nキャンセル：クラウドのデータを読み込む");
+        if(useLocal){
+          await saveCloudData(true);
+          clearUnsynced();
+          updateAuthUI("端末データをクラウドへ保存しました。", "good");
+          return;
+        }
+      } else if(syncStatus.status === "different"){
+        const useLocal = confirm("端末データとクラウドデータが異なります。どちらが新しいか自動判定できません。\n\nOK：この端末のデータをクラウドへ保存する\nキャンセル：クラウドのデータを読み込む");
         if(useLocal){
           await saveCloudData(true);
           clearUnsynced();
@@ -2203,7 +2297,7 @@ async function autoLoadOrCreateCloudData(){
       saveLocalOnly();
       isApplyingCloudData = false;
       render();
-      updateAuthUI("クラウドから読み込みました。同期準備完了です。", "good");
+      updateAuthUI(syncStatus.status === "cloud-newer" ? "クラウドデータを読み込みました。" : "クラウドから読み込みました。同期準備完了です。", "good");
       toast("クラウドから読み込みました");
     } else {
       await saveCloudData(true);
