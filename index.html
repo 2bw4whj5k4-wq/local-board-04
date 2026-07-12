@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>学習負荷プランナー v0.7.1</title>
+  <title>学習負荷プランナー v0.7.2</title>
   <style>
     :root {
       --bg: #f7f3ee;
@@ -26,17 +26,14 @@
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", "YuGothic", Meiryo, sans-serif;
       color: var(--ink);
       min-height: 100vh;
-      background:
-        radial-gradient(circle at 12% 0%, rgba(202, 163, 129, .27), transparent 30rem),
-        radial-gradient(circle at 85% 8%, rgba(123, 91, 67, .12), transparent 22rem),
-        linear-gradient(180deg, #fffdfa, var(--bg));
+      background: var(--bg);
     }
     header, main { max-width: 1220px; margin: 0 auto; padding: 18px; }
     header { padding-top: 26px; padding-bottom: 4px; }
     .head {
       display:flex; justify-content:space-between; align-items:flex-end; gap:12px; flex-wrap:wrap;
     }
-    h1 { margin:0; font-size:clamp(24px,4vw,38px); letter-spacing:.03em; }
+    h1 { margin:0; font-size:30px; letter-spacing:0; font-weight:600; }
     .sub { color:var(--muted); margin:8px 0 0; line-height:1.6; font-size:14px; }
     .tabs {
       display:flex; gap:8px; flex-wrap:wrap; position:sticky; top:0; z-index:20;
@@ -108,7 +105,7 @@
     .badge.bad { color:var(--bad); background:rgba(179,75,75,.12); }
     .badge.blue { color:var(--blue); background:rgba(78,111,140,.12); }
     .progress { height:11px; background:#eee6de; border-radius:999px; overflow:hidden; margin:10px 0 6px; }
-    .bar { height:100%; width:0%; background:linear-gradient(90deg,var(--accent2),var(--accent)); border-radius:999px; transition:.25s; }
+    .bar { height:100%; width:0%; background:var(--accent); border-radius:999px; transition:.25s; }
     .twocol { display:grid; grid-template-columns:1fr 1fr; gap:7px; color:var(--muted); font-size:13px; line-height:1.55; }
     @media (max-width: 560px) { .twocol { grid-template-columns:1fr; } }
     .empty {
@@ -150,7 +147,7 @@
     .barlist { display:grid; gap:9px; }
     .barrow { display:grid; grid-template-columns:72px 1fr 74px; gap:8px; align-items:center; font-size:12px; color:var(--muted); }
     .bartrack { height:12px; background:#eee6de; border-radius:999px; overflow:hidden; }
-    .barfill { height:100%; background:linear-gradient(90deg,var(--accent2),var(--accent)); border-radius:999px; width:0%; }
+    .barfill { height:100%; background:var(--accent); border-radius:999px; width:0%; }
     .detail-panel { border:1px solid var(--line); background:rgba(255,255,255,.78); border-radius:16px; padding:12px; }
     .mini-select-row { display:flex; gap:8px; flex-wrap:wrap; align-items:end; justify-content:space-between; margin-bottom:10px; }
     .mini-select-row label { min-width:180px; }
@@ -190,19 +187,19 @@
     /* v0.5.3 additions */
     body[data-theme="light"] {
       --bg:#f7f8fb; --card:rgba(255,255,255,.96); --ink:#22262a; --muted:#6d747c; --line:#dde3ea; --accent:#56616f; --accent2:#aab4c2; --blue:#526f9b;
-      background:linear-gradient(180deg,#ffffff,var(--bg));
+      background:var(--bg);
     }
     body[data-theme="dark"] {
       --bg:#151515; --card:rgba(35,35,38,.94); --ink:#f2eee8; --muted:#b8b0a8; --line:#45413d; --accent:#c7a27f; --accent2:#8b6d54; --good:#75c095; --warn:#d7a45f; --bad:#d47b7b; --blue:#86a8c7;
-      background:radial-gradient(circle at 10% 0%,rgba(199,162,127,.13),transparent 26rem),linear-gradient(180deg,#202020,var(--bg));
+      background:var(--bg);
     }
     body[data-theme="pink"] {
       --bg:#fff3f5; --card:rgba(255,255,255,.94); --ink:#38282d; --muted:#7f6870; --line:#efd8df; --accent:#a35d72; --accent2:#e0a8b6; --blue:#806b9b;
-      background:radial-gradient(circle at 10% 0%,rgba(224,168,182,.28),transparent 28rem),linear-gradient(180deg,#fffafd,var(--bg));
+      background:var(--bg);
     }
     body[data-theme="blue"] {
       --bg:#eef6fb; --card:rgba(255,255,255,.94); --ink:#24313a; --muted:#61727d; --line:#d7e6ee; --accent:#4d7792; --accent2:#9bc2d6; --blue:#4d7792;
-      background:radial-gradient(circle at 10% 0%,rgba(155,194,214,.3),transparent 28rem),linear-gradient(180deg,#fbfeff,var(--bg));
+      background:var(--bg);
     }
     body[data-theme="dark"] input, body[data-theme="dark"] select, body[data-theme="dark"] textarea { background:#242426; color:var(--ink); border-color:var(--line); }
     body[data-theme="dark"] .item, body[data-theme="dark"] .statbox, body[data-theme="dark"] .detail-panel, body[data-theme="dark"] .day-card { background:rgba(42,42,45,.78); }
@@ -218,10 +215,10 @@
     .vchart-wrap { border:1px solid var(--line); border-radius:16px; background:rgba(255,255,255,.72); padding:14px 12px 10px; overflow-x:auto; }
     body[data-theme="dark"] .vchart-wrap { background:rgba(42,42,45,.7); }
     .vchart-axis-label { color:var(--muted); font-size:12px; margin-bottom:8px; }
-    .vchart { min-height:260px; display:flex; align-items:flex-end; gap:8px; padding:30px 4px 8px; border-left:1px solid var(--line); border-bottom:1px solid var(--line); background:linear-gradient(180deg, transparent 0 24%, rgba(127,127,127,.08) 24% 25%, transparent 25% 49%, rgba(127,127,127,.08) 49% 50%, transparent 50% 74%, rgba(127,127,127,.08) 74% 75%, transparent 75% 100%); }
+    .vchart { min-height:260px; display:flex; align-items:flex-end; gap:8px; padding:30px 4px 8px; border-left:1px solid var(--line); border-bottom:1px solid var(--line); background:transparent; }
     .vbar-col { min-width:42px; flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:6px; height:220px; }
     .vbar-value { font-size:11px; color:var(--muted); min-height:28px; text-align:center; display:flex; align-items:flex-end; }
-    .vbar { width:70%; min-height:3px; border-radius:10px 10px 0 0; background:linear-gradient(180deg,var(--accent2),var(--accent)); }
+    .vbar { width:70%; min-height:3px; border-radius:10px 10px 0 0; background:var(--accent); }
     .vbar-label { font-size:12px; color:var(--muted); white-space:nowrap; }
     .future-list { display:grid; gap:10px; }
     .theme-preview { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
@@ -241,7 +238,7 @@
       --warn:#efbd74;
       --bad:#ee8f8f;
       --blue:#9ec5e6;
-      background:radial-gradient(circle at 12% 0%,rgba(216,173,132,.18),transparent 28rem),linear-gradient(180deg,#1b1c20,var(--bg));
+      background:var(--bg);
     }
     body[data-theme="dark"] .card,
     body[data-theme="dark"] .auth-status,
@@ -347,68 +344,82 @@
     body[data-theme="dark"] .vchart {
       border-left-color:var(--line);
       border-bottom-color:var(--line);
-      background:linear-gradient(180deg, transparent 0 24%, rgba(255,255,255,.08) 24% 25%, transparent 25% 49%, rgba(255,255,255,.08) 49% 50%, transparent 50% 74%, rgba(255,255,255,.08) 74% 75%, transparent 75% 100%);
+      background:transparent;
     }
 
-    /* v0.7.0 UI refresh: practical app styling only */
+    /* v0.7.2 UI refresh: DESIGN.md-inspired practical app styling only */
     :root {
-      --bg:#f5f6f8;
+      --bg:#f5f5f7;
       --card:#ffffff;
-      --ink:#1f2933;
-      --muted:#667085;
-      --line:#d9dee7;
-      --accent:#2563eb;
-      --accent2:#5b7fd6;
+      --ink:#1d1d1f;
+      --muted:#6e6e73;
+      --line:#e0e0e0;
+      --accent:#0066cc;
+      --accent2:#0071e3;
       --good:#207a4c;
-      --warn:#a76013;
+      --warn:#8a4b0f;
       --bad:#b42318;
-      --blue:#2563eb;
-      --shadow:0 1px 2px rgba(16,24,40,.06);
-      --r:10px;
+      --blue:#0066cc;
+      --shadow:none;
+      --r:8px;
     }
     body,
     body[data-theme="light"],
     body[data-theme="pink"],
     body[data-theme="blue"] {
       color:var(--ink);
-      background:#f5f6f8;
+      background:var(--bg);
+      font-size:17px;
+      line-height:1.47;
     }
-    header, main { max-width:1180px; padding:14px 18px; }
-    header { padding-top:16px; padding-bottom:0; }
+    header, main { max-width:1180px; padding:16px 20px; }
+    header { padding-top:18px; padding-bottom:0; }
     .head { align-items:center; }
-    h1 { font-size:clamp(22px,3vw,30px); letter-spacing:0; font-weight:800; }
-    h2 { font-size:16px; letter-spacing:0; }
-    h3 { font-size:14px; letter-spacing:0; }
-    .sub { margin-top:4px; font-size:13px; color:var(--muted); }
+    h1 { font-size:30px; line-height:1.2; letter-spacing:0; font-weight:600; }
+    h2 { font-size:17px; line-height:1.3; letter-spacing:0; font-weight:600; }
+    h3 { font-size:14px; line-height:1.35; letter-spacing:0; font-weight:600; }
+    .sub { margin-top:4px; font-size:14px; color:var(--muted); }
     .tabs {
-      gap:4px;
+      gap:6px;
       padding:8px 0;
-      margin:8px 0 12px;
-      background:rgba(245,246,248,.96);
+      margin:10px 0 14px;
+      background:rgba(245,245,247,.92);
       border-bottom:1px solid var(--line);
-      backdrop-filter:none;
+      backdrop-filter:saturate(180%) blur(18px);
       overflow-x:auto;
       flex-wrap:nowrap;
       scrollbar-width:none;
     }
     .tabs::-webkit-scrollbar { display:none; }
     .tab, button, .filebtn {
-      border-radius:8px;
-      padding:9px 12px;
-      font-weight:700;
+      min-height:44px;
+      border-radius:999px;
+      padding:10px 16px;
+      font-weight:600;
       box-shadow:none;
+      transition:background-color .15s ease, border-color .15s ease, color .15s ease, transform .08s ease;
     }
     .tab {
       flex:0 0 auto;
       background:transparent;
-      color:#344054;
+      color:#424245;
       border:1px solid transparent;
+      position:relative;
     }
     .tab.active {
       background:#ffffff;
       color:var(--accent);
       border-color:var(--line);
-      box-shadow:0 1px 2px rgba(16,24,40,.06);
+    }
+    .tab.active::after {
+      content:"";
+      position:absolute;
+      left:16px;
+      right:16px;
+      bottom:5px;
+      height:2px;
+      border-radius:999px;
+      background:var(--accent);
     }
     button, .filebtn {
       background:var(--accent);
@@ -417,22 +428,23 @@
     }
     button.secondary, .filebtn.secondary {
       background:#ffffff;
-      color:#344054;
+      color:var(--accent);
       border:1px solid var(--line);
     }
     button.ghost {
       background:#ffffff;
-      color:#344054;
+      color:#424245;
       border:1px solid var(--line);
     }
     button.danger { background:var(--bad); border-color:var(--bad); color:#fff; }
+    button:active, .filebtn:active, .tab:active { transform:scale(.98); }
     .grid { gap:12px; }
     .card {
       background:#ffffff;
       border:1px solid var(--line);
-      border-radius:10px;
+      border-radius:var(--r);
       box-shadow:var(--shadow);
-      padding:14px;
+      padding:20px;
     }
     .item,
     .statbox,
@@ -443,28 +455,30 @@
     .vchart-wrap {
       background:#ffffff;
       border:1px solid var(--line);
-      border-radius:9px;
+      border-radius:var(--r);
       box-shadow:none;
     }
-    .item { padding:11px; }
-    .metric { font-size:24px; font-weight:800; }
+    .item { padding:14px; }
+    .metric { font-size:24px; font-weight:600; }
     .small { color:var(--muted); }
-    label { color:#344054; font-weight:700; }
+    label { color:var(--ink); font-weight:600; }
     input, select, textarea {
-      border-radius:8px;
-      border-color:#cfd6e2;
+      min-height:44px;
+      border-radius:10px;
+      border-color:var(--line);
       background:#fff;
       color:var(--ink);
+      padding:11px 14px;
     }
     input:focus, select:focus, textarea:focus {
       border-color:var(--accent);
-      box-shadow:0 0 0 3px rgba(37,99,235,.12);
+      box-shadow:0 0 0 3px rgba(0,102,204,.16);
     }
     .notice {
-      border-radius:9px;
-      border-color:#d9dee7;
-      background:#f8fafc;
-      color:#344054;
+      border-radius:var(--r);
+      border-color:var(--line);
+      background:#fafafc;
+      color:#424245;
     }
     .notice.good, .auth-message.good {
       border-color:#b7dfc9;
@@ -477,62 +491,62 @@
       color:#912018;
     }
     .empty {
-      border-radius:9px;
-      background:#f8fafc;
-      border-color:#d9dee7;
+      border-radius:var(--r);
+      background:#fafafc;
+      border-color:var(--line);
       color:var(--muted);
     }
     .badge, .cloud-pill {
-      border-radius:6px;
-      background:#eef2f6;
-      color:#344054;
-      font-weight:700;
+      border-radius:999px;
+      background:#f5f5f7;
+      color:#424245;
+      font-weight:600;
     }
     .badge.good, .cloud-pill.good { color:#17623d; background:#e9f7ef; }
     .badge.warn, .cloud-pill.warn { color:#8a4b0f; background:#fff3df; }
     .badge.bad, .cloud-pill.bad { color:#912018; background:#fff0ee; }
-    .badge.blue { color:#1849a9; background:#eff4ff; }
-    .progress, .bartrack { background:#e8edf3; border-radius:999px; }
+    .badge.blue { color:var(--accent); background:#eef6ff; }
+    .progress, .bartrack { background:#e5e5ea; border-radius:999px; }
     .bar, .barfill, .vbar { background:var(--accent); }
     .auth-status {
       background:#ffffff;
       border-color:var(--line);
-      border-radius:8px;
+      border-radius:999px;
       box-shadow:none;
     }
     .tasknum {
-      border-radius:8px;
-      background:#eef2f6;
-      color:#344054;
+      border-radius:999px;
+      background:#f5f5f7;
+      color:#424245;
     }
-    .toast { border-radius:8px; background:#1f2933; font-weight:700; }
-    .divider { background:#e4e7ec; }
+    .toast { border-radius:999px; background:#1d1d1f; font-weight:600; }
+    .divider { background:var(--line); }
     .segmented { gap:4px; }
     .segmented button {
       background:#ffffff;
-      color:#344054;
+      color:#424245;
       border:1px solid var(--line);
     }
     .segmented button.active {
-      background:#eff4ff;
-      color:#1849a9;
-      border-color:#b2ccff;
+      background:#eef6ff;
+      color:var(--accent);
+      border-color:var(--accent);
     }
     .vchart {
       background:#ffffff;
-      border-color:#d9dee7;
+      border-color:var(--line);
     }
     body[data-theme="dark"] {
-      --bg:#111827;
-      --card:#1f2937;
-      --ink:#f9fafb;
-      --muted:#cbd5e1;
-      --line:#374151;
-      --accent:#60a5fa;
-      --accent2:#60a5fa;
-      background:#111827;
+      --bg:#1d1d1f;
+      --card:#272729;
+      --ink:#f5f5f7;
+      --muted:#d2d2d7;
+      --line:#3a3a3c;
+      --accent:#2997ff;
+      --accent2:#2997ff;
+      background:var(--bg);
     }
-    body[data-theme="dark"] .tabs { background:rgba(17,24,39,.96); border-color:var(--line); }
+    body[data-theme="dark"] .tabs { background:rgba(29,29,31,.92); border-color:var(--line); }
     body[data-theme="dark"] .card,
     body[data-theme="dark"] .tab.active,
     body[data-theme="dark"] .item,
@@ -543,43 +557,44 @@
     body[data-theme="dark"] .auth-message,
     body[data-theme="dark"] .vchart-wrap,
     body[data-theme="dark"] .auth-status {
-      background:#1f2937;
+      background:#272729;
       border-color:var(--line);
       color:var(--ink);
     }
     body[data-theme="dark"] input,
     body[data-theme="dark"] select,
     body[data-theme="dark"] textarea {
-      background:#111827;
-      border-color:#4b5563;
+      background:#1d1d1f;
+      border-color:#3a3a3c;
       color:var(--ink);
     }
     body[data-theme="dark"] button.secondary,
     body[data-theme="dark"] .filebtn.secondary,
     body[data-theme="dark"] button.ghost,
     body[data-theme="dark"] .segmented button {
-      background:#111827;
+      background:#1d1d1f;
       color:var(--ink);
-      border-color:#4b5563;
+      border-color:#3a3a3c;
     }
-    body[data-theme="dark"] .tab { color:#d1d5db; }
+    body[data-theme="dark"] .tab { color:#d2d2d7; }
     body[data-theme="dark"] .notice,
     body[data-theme="dark"] .empty {
-      background:#172033;
-      border-color:#374151;
-      color:#d1d5db;
+      background:#2a2a2c;
+      border-color:#3a3a3c;
+      color:#d2d2d7;
     }
     body[data-theme="dark"] .badge,
     body[data-theme="dark"] .cloud-pill,
     body[data-theme="dark"] .tasknum {
-      background:#374151;
-      color:#f9fafb;
+      background:#3a3a3c;
+      color:#f5f5f7;
     }
     @media (max-width: 760px) {
-      header, main { padding-left:10px; padding-right:10px; }
-      .card { padding:12px; }
-      .tabs { margin-left:-10px; margin-right:-10px; padding-left:10px; padding-right:10px; }
-      .tab { padding:8px 10px; }
+      header, main { padding-left:12px; padding-right:12px; }
+      h1 { font-size:24px; }
+      .card { padding:14px; }
+      .tabs { margin-left:-12px; margin-right:-12px; padding-left:12px; padding-right:12px; }
+      .tab { padding:9px 12px; }
       .metric { font-size:22px; }
       .auth-form.password { grid-template-columns:1fr; }
       .item-head { gap:8px; }
@@ -591,7 +606,7 @@
   <header>
     <div class="head">
       <div>
-        <h1>学習負荷プランナー v0.7.1</h1>
+        <h1>学習負荷プランナー v0.7.2</h1>
         <p class="sub">学習計画、記録、共有をまとめて管理できます。</p>
       </div>
       <div class="actions">
@@ -3244,9 +3259,9 @@ initCloud();
   }
 
   function ensureV056Dom(){
-    document.title = "学習負荷プランナー v0.7.1";
+    document.title = "学習負荷プランナー v0.7.2";
     const h1 = document.querySelector("h1");
-    if(h1) h1.textContent = "学習負荷プランナー v0.7.1";
+    if(h1) h1.textContent = "学習負荷プランナー v0.7.2";
     const sub = document.querySelector("header .sub");
     if(sub) sub.textContent = "分析グラフ修正、プラスα記録の種類非表示、範囲なし教材の入力整理に対応。";
 
@@ -4068,8 +4083,8 @@ initCloud();
   }
 
   function ensureV057Dom(){
-    document.title = "学習負荷プランナー v0.7.1";
-    const h1=document.querySelector("h1"); if(h1) h1.textContent="学習負荷プランナー v0.7.1";
+    document.title = "学習負荷プランナー v0.7.2";
+    const h1=document.querySelector("h1"); if(h1) h1.textContent="学習負荷プランナー v0.7.2";
     const sub=document.querySelector("header .sub"); if(sub) sub.textContent="分析グラフ修正、プラスα記録の種類非表示、範囲なし教材の入力整理に対応。";
 
     const recType=document.getElementById("recType");
@@ -4288,7 +4303,7 @@ initCloud();
 
 /* v0.5.9 patch: save-status visibility and diagnostic copy, no data schema change */
 (function(){
-  const APP_VERSION_059 = "0.7.1";
+  const APP_VERSION_059 = "0.7.2";
   const LOCAL_LAST_SAVE_KEY_059 = KEY + "-last-local-saved-at";
   let lastDiagnosticErrorV059 = "";
 
@@ -4405,9 +4420,9 @@ initCloud();
 
   function ensureV059Dom(){
     ensureV059Styles();
-    document.title = "学習負荷プランナー v0.7.1";
+    document.title = "学習負荷プランナー v0.7.2";
     const h1 = document.querySelector("h1");
-    if(h1) h1.textContent = "学習負荷プランナー v0.7.1";
+    if(h1) h1.textContent = "学習負荷プランナー v0.7.2";
     const sub = document.querySelector("header .sub");
     if(sub) sub.textContent = "学習計画、記録、共有をまとめて管理できます。";
 
@@ -4921,9 +4936,9 @@ initCloud();
 
   function ensureV060Dom(){
     ensureV060Styles();
-    document.title = "学習負荷プランナー v0.7.1";
+    document.title = "学習負荷プランナー v0.7.2";
     const h1 = document.querySelector("h1");
-    if(h1) h1.textContent = "学習負荷プランナー v0.7.1";
+    if(h1) h1.textContent = "学習負荷プランナー v0.7.2";
     const sub = document.querySelector("header .sub");
     if(sub) sub.textContent = "学習計画、記録、共有をまとめて管理できます。";
 
@@ -5031,7 +5046,7 @@ initCloud();
     }
     if(updates){
       const topNotice = updates.querySelector(".notice.good");
-      if(topNotice) topNotice.innerHTML = "v0.7.1では、更新履歴の並び順とバージョン管理ルールを整理しました。保存データやタスク生成の仕組みは変更していません。";
+      if(topNotice) topNotice.innerHTML = "v0.7.2では、DESIGN.mdを参考に、白・薄いグレー・黒文字・青1色を中心にした実用的なUIへ整えました。保存データやタスク生成の仕組みは変更していません。";
       const dataMemo = [...updates.querySelectorAll(".card")].find(c=>c.querySelector("h2")?.textContent.trim()==="データ保護メモ");
       const memoNotice = dataMemo?.querySelector(".notice");
       if(memoNotice) memoNotice.innerHTML = "共有機能ではSupabaseに新しい3テーブルを追加します。既存のstudy_planner_dataと保存JSON本体は維持しますが、記録には非公開フラグが追加される場合があります。";
@@ -6295,10 +6310,11 @@ initCloud();
 </script>
 
 <script>
-/* v0.7.1 changelog order and version label patch */
+/* v0.7.2 changelog order and version label patch */
 (function(){
-  const APP_DISPLAY_VERSION_071 = "v0.7.1";
-  const CHANGELOG_META_071 = {
+  const APP_DISPLAY_VERSION_072 = "v0.7.2";
+  const CHANGELOG_META_072 = {
+    "0.7.2": "更新日：2026-07-08 / 種別：UI改善",
     "0.7.1": "更新日：2026-07-08 / 種別：内部修正・表示修正",
     "0.7.0": "更新日：2026-07-05 / 種別：UI改善",
     "0.6.0": "更新日：2026-06-19 / 種別：仕様変更",
@@ -6310,19 +6326,19 @@ initCloud();
     "0.5.3": "更新日：2026-06-19 / 種別：仕様変更・分析改善"
   };
 
-  function applyVersionLabelV071(){
-    document.title = `学習負荷プランナー ${APP_DISPLAY_VERSION_071}`;
+  function applyVersionLabelV072(){
+    document.title = `学習負荷プランナー ${APP_DISPLAY_VERSION_072}`;
     const h1 = document.querySelector("h1");
-    if(h1) h1.textContent = `学習負荷プランナー ${APP_DISPLAY_VERSION_071}`;
+    if(h1) h1.textContent = `学習負荷プランナー ${APP_DISPLAY_VERSION_072}`;
   }
 
-  function parseVersionPartsV071(text){
+  function parseVersionPartsV072(text){
     const match = String(text || "").match(/v?(\d+)\.(\d+)\.(\d+)/i);
     if(!match) return null;
     return match.slice(1, 4).map(n => Number(n));
   }
 
-  function compareVersionsV071(a, b){
+  function compareVersionsV072(a, b){
     for(let i = 0; i < 3; i++){
       const diff = (a[i] || 0) - (b[i] || 0);
       if(diff) return diff;
@@ -6330,20 +6346,20 @@ initCloud();
     return 0;
   }
 
-  function versionKeyV071(parts){
+  function versionKeyV072(parts){
     return parts ? parts.join(".") : "";
   }
 
-  function versionPartsFromCardV071(card){
-    return parseVersionPartsV071(card?.querySelector?.("h2")?.textContent);
+  function versionPartsFromCardV072(card){
+    return parseVersionPartsV072(card?.querySelector?.("h2")?.textContent);
   }
 
-  function ensureCardMetaV071(card){
-    const parts = versionPartsFromCardV071(card);
-    const key = versionKeyV071(parts);
+  function ensureCardMetaV072(card){
+    const parts = versionPartsFromCardV072(card);
+    const key = versionKeyV072(parts);
     if(!key) return;
     card.dataset.version = key;
-    const text = CHANGELOG_META_071[key];
+    const text = CHANGELOG_META_072[key];
     if(!text) return;
     const h2 = card.querySelector("h2");
     let meta = Array.from(card.children).find(el => el.classList?.contains("update-meta"));
@@ -6355,25 +6371,37 @@ initCloud();
     meta.textContent = text;
   }
 
-  function sortUpdateCardsV071(updates){
+  function sortUpdateCardsV072(updates){
     const items = Array.from(updates.children).map((el, index) => ({
       el,
       index,
-      version: versionPartsFromCardV071(el)
+      version: versionPartsFromCardV072(el)
     }));
     const versionCards = items
       .filter(item => item.el.classList?.contains("card") && item.version)
-      .sort((a, b) => compareVersionsV071(b.version, a.version) || a.index - b.index);
+      .sort((a, b) => compareVersionsV072(b.version, a.version) || a.index - b.index);
     const otherCards = items.filter(item => !item.version);
     versionCards.forEach(item => updates.appendChild(item.el));
     otherCards.forEach(item => updates.appendChild(item.el));
   }
 
-  function ensureChangelogV071(){
-    applyVersionLabelV071();
+  function ensureChangelogV072(){
+    applyVersionLabelV072();
     const updates = document.querySelector("#updates .grid");
     if(!updates) return;
 
+    if(!document.getElementById("updateV072Card")){
+      updates.insertAdjacentHTML("afterbegin", `
+        <div class="card span-12" id="updateV072Card">
+          <h2>v0.7.2</h2>
+          <p class="small update-meta">更新日：2026-07-08 / 種別：UI改善</p>
+          <div class="list">
+            <div class="item"><div class="title">DESIGN.mdを参考にUIを整理</div><div class="small">生成AIサービス風の装飾を減らし、白・薄いグレー・黒文字・青1色を中心にした実用的な学習管理アプリ風UIへ整理しました。</div></div>
+            <div class="item"><div class="title">カード・ボタン・タブ・入力欄を統一</div><div class="small">カード、ボタン、タブ、入力欄、余白、文字サイズを見直し、スマホでも読みやすい密度に調整しました。</div></div>
+            <div class="item"><div class="title">機能と保存データはそのまま</div><div class="small">保存JSON、Supabase連携、ログイン、共有、タスク生成、復習生成、記録保存の仕組みは変更していません。</div></div>
+          </div>
+        </div>`);
+    }
     if(!document.getElementById("updateV071Card")){
       updates.insertAdjacentHTML("afterbegin", `
         <div class="card span-12" id="updateV071Card">
@@ -6390,18 +6418,18 @@ initCloud();
     const topNotice = updates.querySelector(".notice.good");
     if(topNotice) topNotice.innerHTML = "今後は小さな修正でもバージョン番号を更新し、更新履歴タブへ内容を残します。新しいバージョンほど上に表示します。";
 
-    Array.from(updates.querySelectorAll(".card")).forEach(ensureCardMetaV071);
-    sortUpdateCardsV071(updates);
+    Array.from(updates.querySelectorAll(".card")).forEach(ensureCardMetaV072);
+    sortUpdateCardsV072(updates);
   }
 
-  const oldRenderV071 = render;
+  const oldRenderV072 = render;
   render = function(){
-    const result = oldRenderV071.apply(this, arguments);
-    ensureChangelogV071();
+    const result = oldRenderV072.apply(this, arguments);
+    ensureChangelogV072();
     return result;
   };
 
-  ensureChangelogV071();
+  ensureChangelogV072();
 })();
 </script>
 
